@@ -130,7 +130,7 @@ jobs:
             echo "No new data to commit."
           else
             git commit -m "data: update current year [$(date -u '+%Y-%m-%d %H:%M UTC')]"
-            git push
+            git pull --rebase && git push
           fi
 
   # ── Weekly historical backfill ───────────────────────────────────────────────
@@ -193,5 +193,5 @@ jobs:
             echo "No new data to commit."
           else
             git commit -m "data: historical backfill [$(date -u '+%Y-%m-%d %H:%M UTC')]"
-            git push
+            git pull --rebase && git push
           fi
