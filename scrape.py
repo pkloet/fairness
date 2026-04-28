@@ -39,7 +39,7 @@ FIRST_YEAR = 2010          # earliest year to try
 import datetime
 CURRENT_YEAR = datetime.date.today().year
 
-REQUEST_DELAY = 0.3        # seconds between HTTP requests (be polite to the server)
+REQUEST_DELAY = 0.1        # seconds between HTTP requests (be polite to the server)
 REQUEST_TIMEOUT = 15       # seconds before giving up on a request
 
 OUTPUT_DIR = "data"
@@ -63,7 +63,7 @@ def fetch(url):
     """GET a URL and return the response, or None on failure."""
     try:
         time.sleep(REQUEST_DELAY)
-        resp = requests.get(url, timeout=REQUEST_TIMEOUT)
+        resp = requests.get(url, timeout=(5, REQUEST_TIMEOUT))
         if resp.status_code == 200:
             return resp
         print(f"  [HTTP {resp.status_code}] {url}")
