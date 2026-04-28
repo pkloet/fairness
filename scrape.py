@@ -19,6 +19,7 @@ import json
 import os
 import time
 import requests
+import datetime
 from bs4 import BeautifulSoup
 
 # ─── Config ──────────────────────────────────────────────────────────────────
@@ -36,7 +37,6 @@ REGATTAS = [
 ]
 
 FIRST_YEAR = 2020          # earliest year to try
-import datetime
 CURRENT_YEAR = datetime.date.today().year
 
 REQUEST_DELAY = 0.1        # seconds between HTTP requests (be polite to the server)
