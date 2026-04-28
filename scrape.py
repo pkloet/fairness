@@ -36,7 +36,8 @@ REGATTAS = [
 ]
 
 FIRST_YEAR = 2010          # earliest year to try
-CURRENT_YEAR = 2025        # last year to try
+import datetime
+CURRENT_YEAR = datetime.date.today().year
 
 REQUEST_DELAY = 0.3        # seconds between HTTP requests (be polite to the server)
 REQUEST_TIMEOUT = 15       # seconds before giving up on a request
