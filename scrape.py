@@ -35,7 +35,7 @@ REGATTAS = [
     "diyr",
 ]
 
-FIRST_YEAR = 2010          # earliest year to try
+FIRST_YEAR = 2020          # earliest year to try
 import datetime
 CURRENT_YEAR = datetime.date.today().year
 
