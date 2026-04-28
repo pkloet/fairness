@@ -61,6 +61,7 @@ def race_url(regatta, year, href):
 
 def fetch(url):
     """GET a URL and return the response, or None on failure."""
+    print("Fetch" + url)
     try:
         time.sleep(REQUEST_DELAY)
         resp = requests.get(url, timeout=(5, REQUEST_TIMEOUT))
