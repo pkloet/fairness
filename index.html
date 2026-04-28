@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Regatta Lane Fairness</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --water-dark: #0a1628;
+    --water-mid: #0e2040;
+    --water-light: #1a3a6b;
+    --lane-line: rgba(255,255,255,0.08);
+    --gold: #e8b84b;
+    --gold-dim: #a07c28;
+    --text-primary: #f0f4ff;
+    --text-secondary: rgba(240,244,255,0.55);
+    --accent: #4fc3f7;
+    --accent-dim: rgba(79,195,247,0.15);
+    --bar-bg: rgba(255,255,255,0.06);
+    --err-color: rgba(255,255,255,0.5);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--water-dark);
+    color: var(--text-primary);
+    font-family: 'Barlow', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Subtle water texture via layered gradients */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      repeating-linear-gradient(
+        180deg,
+        transparent 0px,
+        transparent 58px,
+        rgba(255,255,255,0.025) 58px,
+        rgba(255,255,255,0.025) 60px
+      );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* Header */
+  header { margin-bottom: 2.5rem; }
+  .eyebrow {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+  h1 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: clamp(2rem, 6vw, 3.5rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+  }
+  h1 span { color: var(--gold); }
+
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  .meta-pill {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .meta-pill .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--gold);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .controls select, .controls button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    color: var(--text-primary);
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    appearance: none;
+  }
+  .controls select:hover, .controls button:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.3);
+  }
+  .controls select option { background: #1a3a6b; }
+  .btn-refresh {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--accent-dim) !important;
+    border-color: rgba(79,195,247,0.35) !important;
+    color: var(--accent) !important;
+  }
+  .btn-refresh:hover { background: rgba(79,195,247,0.25) !important; }
+
+  .tab-row {
+    display: flex;
+    gap: 0;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .tab {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    padding: 8px 20px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+    background: none;
+    border-top: none; border-left: none; border-right: none;
+  }
+  .tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .tab:hover:not(.active) { color: var(--text-primary); }
+
+  /* Chart area */
+  .chart-section {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 2rem 2rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .chart-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+  }
+
+  /* Lane chart */
+  .lane-chart { width: 100%; }
+
+  .lane-row {
+    display: grid;
+    grid-template-columns: 40px 1fr 90px;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 14px;
+    opacity: 0;
+    transform: translateX(-12px);
+    animation: fadeSlide 0.4s forwards;
+  }
+  @keyframes fadeSlide {
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .lane-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: right;
+  }
+  .lane-label.best { color: var(--gold); }
+
+  .bar-track {
+    position: relative;
+    height: 36px;
+    border-radius: 4px;
+    overflow: visible;
+  }
+
+  /* The zero-reference line */
+  .zero-line {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: rgba(255,255,255,0.2);
+    z-index: 2;
+  }
+
+  .bar-fill {
+    position: absolute;
+    top: 6px; bottom: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #1a5fa8, #2980d4);
+    transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    z-index: 1;
+  }
+  .bar-fill.best-lane {
+    background: linear-gradient(90deg, #a07c28, #e8b84b);
+  }
+
+  .bar-err {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 2px;
+    background: var(--err-color);
+    z-index: 3;
+    border-radius: 1px;
+  }
+  .bar-err::before, .bar-err::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    width: 1px; height: 10px;
+    background: var(--err-color);
+  }
+  .bar-err::before { left: 0; }
+  .bar-err::after { right: 0; }
+
+  /* Boat icon */
+  .boat-icon {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 4;
+    font-size: 22px;
+    line-height: 1;
+    filter: drop-shadow(0 0 4px rgba(0,0,0,0.6));
+  }
+
+  .time-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    color: var(--text-secondary);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .time-value.best { color: var(--gold); }
+  .time-value .se { font-size: 11px; opacity: 0.6; }
+
+  /* X-axis */
+  .x-axis {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    margin-top: 6px;
+  }
+  .x-tick {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: 'Barlow Condensed', sans-serif;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .legend-swatch {
+    width: 20px; height: 4px;
+    border-radius: 2px;
+  }
+  .legend-err {
+    width: 20px; height: 2px;
+    background: var(--err-color);
+    position: relative;
+  }
+  .legend-err::before, .legend-err::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    width: 1px; height: 10px;
+    background: var(--err-color);
+  }
+  .legend-err::before { left: 0; }
+  .legend-err::after { right: 0; }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .stat-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+  .stat-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    font-family: 'Barlow Condensed', sans-serif;
+  }
+  .stat-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1;
+  }
+  .stat-value.highlight { color: var(--gold); }
+
+  /* Loading / error */
+  .state-box {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-secondary);
+  }
+  .state-box .spinner {
+    width: 32px; height: 32px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 1rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .state-box p { font-size: 14px; }
+
+  /* Explanation */
+  .explain {
+    border-left: 2px solid rgba(255,255,255,0.12);
+    padding-left: 1rem;
+    margin-top: 1.5rem;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* n-races badge */
+  .n-badge {
+    font-size: 10px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: var(--text-secondary);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  /* No-data lane */
+  .no-data-bar {
+    font-size: 11px;
+    color: rgba(255,255,255,0.2);
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    transform: translateY(-50%);
+    font-style: italic;
+  }
+
+  @media (max-width: 600px) {
+    .chart-section { padding: 1.25rem 1rem 1rem; }
+    .controls { gap: 0.5rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="eyebrow">Live analysis</div>
+    <h1>Lane <span>Fairness</span></h1>
+    <div class="meta-row">
+      <div class="meta-pill"><span class="dot"></span><span id="last-updated">Loading…</span></div>
+      <div class="meta-pill">🚣 Rowing regatta data</div>
+    </div>
+  </header>
+
+  <div class="controls">
+    <select id="regatta-select" aria-label="Select regatta">
+      <option value="raceroei">Raceroei</option>
+      <option value="arb">ARB</option>
+      <option value="hollandia">Hollandia</option>
+      <option value="bvr">BvR</option>
+      <option value="voorjaarsregatta">Voorjaarsregatta</option>
+      <option value="westelijke">Westelijke</option>
+      <option value="nsrf">NSRF</option>
+    </select>
+    <select id="year-select" aria-label="Select year"></select>
+    <button class="btn-refresh" onclick="loadData()">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 8a7 7 0 1 0 7-7 7 7 0 0 0-5 2.1L1 5"/><path d="M1 1v4h4"/></svg>
+      Refresh
+    </button>
+  </div>
+
+  <div class="tab-row">
+    <button class="tab active" onclick="setDay('sat',this)">Saturday</button>
+    <button class="tab" onclick="setDay('sun',this)">Sunday</button>
+    <button class="tab" onclick="setDay('combined',this)">Combined</button>
+  </div>
+
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card"><div class="stat-label">Races analysed</div><div class="stat-value" id="s-races">—</div></div>
+    <div class="stat-card"><div class="stat-label">Fastest lane</div><div class="stat-value highlight" id="s-best">—</div></div>
+    <div class="stat-card"><div class="stat-label">Max advantage</div><div class="stat-value" id="s-max">—</div></div>
+    <div class="stat-card"><div class="stat-label">Lanes with data</div><div class="stat-value" id="s-lanes">—</div></div>
+  </div>
+
+  <div class="chart-section">
+    <div class="chart-title">Time disadvantage per lane vs fastest lane (seconds, row-normalised)</div>
+    <div class="lane-chart" id="lane-chart">
+      <div class="state-box"><div class="spinner"></div><p>Loading race data…</p></div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#1a5fa8,#2980d4)"></div> Lane disadvantage</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#a07c28,#e8b84b)"></div> Fastest lane</div>
+      <div class="legend-item"><div class="legend-err"></div> Standard error</div>
+    </div>
+  </div>
+
+  <div class="explain">
+    Each race result is normalised by subtracting the row mean, removing boat speed differences between races. The remaining signal is the lane effect: how many seconds slower (or faster) each lane is compared to the average. A value of 0 means exactly average — negative bars appear to the left. Error bars show ±1 standard error.
+  </div>
+
+</div>
+
+<script>
+// ─── Data layer ─────────────────────────────────────────────────────────────
+// In production this reads from /data/{regatta}/{year}_sat.json etc.
+// For demonstration, synthetic data is generated that mirrors your real format.
+
+let currentDay = 'sat';
+let rawData = { sat: [], sun: [] };
+
+function setDay(day, btn) {
+  currentDay = day;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderChart();
+}
+
+// Populate year selector (last 10 years)
+const yearSel = document.getElementById('year-select');
+const currentYear = new Date().getFullYear();
+for (let y = currentYear; y >= currentYear - 9; y--) {
+  const o = document.createElement('option');
+  o.value = y; o.textContent = y;
+  if (y === currentYear) o.selected = true;
+  yearSel.appendChild(o);
+}
+yearSel.addEventListener('change', loadData);
+document.getElementById('regatta-select').addEventListener('change', loadData);
+
+// ─── Load data ───────────────────────────────────────────────────────────────
+async function loadData() {
+  const regatta = document.getElementById('regatta-select').value;
+  const year    = document.getElementById('year-select').value;
+
+  document.getElementById('lane-chart').innerHTML =
+    '<div class="state-box"><div class="spinner"></div><p>Loading race data…</p></div>';
+  document.getElementById('last-updated').textContent = 'Loading…';
+
+  try {
+    // Try to fetch real JSON files from /data/{regatta}/{year}_sat.json
+    const [satRes, sunRes] = await Promise.allSettled([
+      fetch(`data/${regatta}/${year}_sat.json`),
+      fetch(`data/${regatta}/${year}_sun.json`)
+    ]);
+
+    const satOk = satRes.status === 'fulfilled' && satRes.value.ok;
+    const sunOk = sunRes.status === 'fulfilled' && sunRes.value.ok;
+
+    if (satOk || sunOk) {
+      rawData.sat = satOk ? await satRes.value.json() : [];
+      rawData.sun = sunOk ? await sunRes.value.json() : [];
+    } else {
+      // No real data yet — generate synthetic demo data
+      rawData = generateDemoData(regatta, year);
+    }
+
+    const now = new Date();
+    document.getElementById('last-updated').textContent =
+      `Updated ${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+
+    renderChart();
+
+  } catch(e) {
+    rawData = generateDemoData(regatta, document.getElementById('year-select').value);
+    document.getElementById('last-updated').textContent = 'Demo data (no file found)';
+    renderChart();
+  }
+}
+
+// ─── Compute fairness from raw race rows ─────────────────────────────────────
+// Input: array of arrays, each inner array has 8 slots (lanes 1-8), null for missing
+// Output: { means, se, n } arrays of length 8, zero-indexed (index 0 = lane 1)
+function computeFairness(races) {
+  if (!races || races.length === 0) return null;
+
+  const nLanes = 8;
+  // Normalise each race by subtracting row mean (skipna)
+  const normalised = races.map(row => {
+    const valid = row.filter(v => v !== null && v !== undefined && !isNaN(v));
+    if (valid.length === 0) return row.map(() => null);
+    const mean = valid.reduce((a,b) => a+b, 0) / valid.length;
+    return row.map(v => (v !== null && v !== undefined && !isNaN(v)) ? v - mean : null);
+  });
+
+  // Column stats
+  const colData = Array.from({length: nLanes}, (_, i) =>
+    normalised.map(r => r[i]).filter(v => v !== null && v !== undefined && !isNaN(v))
+  );
+
+  const means = colData.map(col => col.length > 0 ? col.reduce((a,b)=>a+b,0)/col.length : null);
+  const stds  = colData.map((col, i) => {
+    if (col.length < 2) return null;
+    const m = means[i];
+    return Math.sqrt(col.reduce((a,b) => a + (b-m)**2, 0) / (col.length - 1));
+  });
+  const n   = colData.map(col => col.length);
+  const se  = stds.map((s, i) => s !== null && n[i] > 0 ? s / Math.sqrt(n[i]) : null);
+
+  // Flip sign: positive = disadvantage (slower), reference = fastest (min mean)
+  const validMeans = means.filter(m => m !== null);
+  if (validMeans.length === 0) return null;
+  const minMean = Math.min(...validMeans);
+  const adjusted = means.map(m => m !== null ? -(m - minMean) : null);
+  // Wait — we want: disadvantage = how much SLOWER than the fastest lane
+  // fastest lane has mean closest to 0 after normalization
+  // slower lanes have higher adjusted values
+  // adjusted[i] = minMean - means[i]  (0 for best lane, positive for slower)
+  const disadvantage = means.map(m => m !== null ? m - minMean : null);
+
+  return { means: disadvantage, se, n };
+}
+
+// ─── Render chart ─────────────────────────────────────────────────────────────
+function renderChart() {
+  let races;
+  if (currentDay === 'sat')      races = rawData.sat;
+  else if (currentDay === 'sun') races = rawData.sun;
+  else                           races = [...(rawData.sat||[]), ...(rawData.sun||[])];
+
+  const chart = document.getElementById('lane-chart');
+
+  if (!races || races.length === 0) {
+    chart.innerHTML = '<div class="state-box"><p>No race data available for this selection.</p></div>';
+    updateStats(null, 0);
+    return;
+  }
+
+  const result = computeFairness(races);
+  if (!result) {
+    chart.innerHTML = '<div class="state-box"><p>Could not compute fairness — check data format.</p></div>';
+    return;
+  }
+
+  const { means, se, n } = result;
+
+  // Find the best lane (lowest disadvantage = 0)
+  let bestLane = -1;
+  let bestVal = Infinity;
+  means.forEach((m, i) => { if (m !== null && m < bestVal) { bestVal = m; bestLane = i; } });
+
+  // Chart range: total x span
+  const validMeans = means.map((m,i) => m !== null ? [m, se[i]||0] : null).filter(Boolean);
+  if (validMeans.length === 0) { chart.innerHTML = '<div class="state-box"><p>No valid lanes.</p></div>'; return; }
+
+  const maxVal = Math.max(...validMeans.map(([m,s]) => m + (s||0)));
+  const chartMax = Math.max(maxVal * 1.25, 0.5);
+
+  // Build lanes HTML
+  let html = '';
+  for (let i = 0; i < 8; i++) {
+    const m = means[i];
+    const s = se[i];
+    const cnt = n[i];
+    const isBest = (i === bestLane);
+    const delay = i * 0.05;
+
+    const hasData = m !== null && cnt > 0;
+
+    // Bar width as % of chartMax
+    const barPct  = hasData ? Math.max(0, m / chartMax * 100) : 0;
+    const errL    = hasData && s ? Math.max(0, (m - s) / chartMax * 100) : barPct;
+    const errR    = hasData && s ? Math.min(100, (m + s) / chartMax * 100) : barPct;
+
+    const laneClass = isBest ? ' best' : '';
+    const fillClass = isBest ? ' best-lane' : '';
+    const valStr    = hasData ? (m >= 0 ? '+' : '') + m.toFixed(2) + 's' : '—';
+    const seStr     = hasData && s ? ' ±' + s.toFixed(2) : '';
+    const nBadge    = hasData ? `<span class="n-badge">n=${cnt}</span>` : '';
+
+    html += `
+    <div class="lane-row" style="animation-delay:${delay}s">
+      <div class="lane-label${laneClass}">${i+1}</div>
+      <div class="bar-track">
+        <div class="zero-line" style="left:0%"></div>
+        ${hasData ? `
+        <div class="bar-fill${fillClass}" style="left:0%;width:${barPct.toFixed(2)}%"></div>
+        <div class="bar-err" style="left:${errL.toFixed(2)}%;width:${(errR-errL).toFixed(2)}%"></div>
+        <div class="boat-icon" style="left:calc(${barPct.toFixed(2)}% + 2px)">🚣</div>
+        ` : `<div class="no-data-bar">no data</div>`}
+      </div>
+      <div class="time-value${laneClass}">${valStr}${nBadge}<br><span class="se">${hasData && s ? '±'+s.toFixed(2)+'s se' : ''}</span></div>
+    </div>`;
+  }
+
+  // X-axis ticks
+  const ticks = [0, chartMax*0.25, chartMax*0.5, chartMax*0.75, chartMax];
+  const tickHtml = ticks.map(t => `<span class="x-tick">${t.toFixed(1)}s</span>`).join('');
+  html += `<div class="x-axis">${tickHtml}</div>`;
+
+  chart.innerHTML = html;
+  updateStats(result, races.length, bestLane, chartMax);
+}
+
+function updateStats(result, nRaces, bestLane, maxAdv) {
+  document.getElementById('s-races').textContent = nRaces || '—';
+  if (!result) {
+    document.getElementById('s-best').textContent = '—';
+    document.getElementById('s-max').textContent = '—';
+    document.getElementById('s-lanes').textContent = '—';
+    return;
+  }
+  const lanesWithData = result.n.filter(c => c > 0).length;
+  document.getElementById('s-best').textContent  = bestLane >= 0 ? `Lane ${bestLane+1}` : '—';
+  document.getElementById('s-max').textContent   = maxAdv != null ? maxAdv.toFixed(2)+'s' : '—';
+  document.getElementById('s-lanes').textContent = lanesWithData + '/8';
+}
+
+// ─── Demo data generator ──────────────────────────────────────────────────────
+// Mimics your Python output: array of arrays, each with 8 slots, null for missing lanes
+function generateDemoData(regatta, year) {
+  const seed = regatta.charCodeAt(0) + Number(year);
+  let r = seed;
+  const rand = () => { r = (r * 1664525 + 1013904223) & 0xffffffff; return (r >>> 0) / 0xffffffff; };
+
+  // Lane biases (seconds): lane 1 = fastest, lane 8 = slowest, realistic spread
+  const baseBias = [0, 0.4, 0.9, 1.3, 1.5, 1.1, 0.6, 0.2].map(b => b + (rand()-0.5)*0.4);
+
+  function makeDay(nRaces) {
+    return Array.from({length: nRaces}, () => {
+      const baseTime = 330 + rand() * 60;
+      return Array.from({length: 8}, (_, lane) => {
+        if (rand() < 0.12) return null; // 12% chance missing lane
+        return parseFloat((baseTime + baseBias[lane] + (rand()-0.5)*4).toFixed(2));
+      });
+    });
+  }
+
+  return {
+    sat: makeDay(12 + Math.floor(rand()*10)),
+    sun: makeDay(10 + Math.floor(rand()*8))
+  };
+}
+
+// ─── Auto-refresh every 60 min on weekends ───────────────────────────────────
+function scheduleRefresh() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 6=Sat
+  const interval = (day === 0 || day === 6) ? 60*60*1000 : 24*60*60*1000;
+  setTimeout(() => { loadData(); scheduleRefresh(); }, interval);
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+loadData();
+scheduleRefresh();
+</script>
+</body>
+</html>
