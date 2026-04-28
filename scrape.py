@@ -36,7 +36,7 @@ REGATTAS = [
     "diyr",
 ]
 
-FIRST_YEAR = 2020          # earliest year to try
+FIRST_YEAR = 2014          # earliest year to try
 CURRENT_YEAR = datetime.date.today().year
 
 REQUEST_DELAY = 0.1        # seconds between HTTP requests (be polite to the server)
