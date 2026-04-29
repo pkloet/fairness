@@ -257,6 +257,9 @@ jobs:
             if [ -n "${{ github.event.inputs.year }}" ]; then
               CMD="$CMD --year ${{ github.event.inputs.year }}"
             fi
+            if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            CMD="$CMD --force"
+            fi
             echo "Running: $CMD"
             $CMD
         - name: Commit results
