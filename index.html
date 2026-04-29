@@ -390,6 +390,70 @@
     font-style: italic;
   }
 
+
+  /* Live regatta buttons */
+  .live-buttons {
+    display: none;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .live-buttons.visible { display: flex; }
+  .btn-live {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(79,195,247,0.12);
+    border: 1px solid rgba(79,195,247,0.4);
+    color: var(--accent);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-live:hover { background: rgba(79,195,247,0.22); border-color: rgba(79,195,247,0.7); }
+  .btn-live .live-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+  .btn-upcoming {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(232,184,75,0.10);
+    border: 1px solid rgba(232,184,75,0.35);
+    color: var(--gold);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-upcoming:hover { background: rgba(232,184,75,0.2); }
+
+  /* Upcoming banner shown in chart area */
+  .upcoming-banner {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: var(--text-secondary);
+  }
+  .upcoming-banner .ub-date {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--gold);
+    margin-bottom: 0.5rem;
+  }
+  .upcoming-banner p { font-size: 13px; }
+
   @media (max-width: 600px) {
     .chart-section { padding: 1.25rem 1rem 1rem; }
     .controls { gap: 0.5rem; }
@@ -407,6 +471,10 @@
       <div class="meta-pill">🚣 Rowing regatta data</div>
     </div>
   </header>
+
+
+  <!-- Live / upcoming regatta quick-jump buttons — shown/hidden by JS -->
+  <div class="live-buttons" id="live-buttons"></div>
 
   <div class="controls">
     <select id="regatta-select" aria-label="Select regatta">
@@ -428,7 +496,6 @@
   <div class="tab-row">
     <button class="tab active" onclick="setDay('sat',this)">Saturday</button>
     <button class="tab" onclick="setDay('sun',this)">Sunday</button>
-    <button class="tab" onclick="setDay('combined',this)">Combined</button>
   </div>
 
   <div class="stats-row" id="stats-row">
@@ -621,9 +688,7 @@ function computeFairness(races) {
 // ─── Render chart ─────────────────────────────────────────────────────────────
 function renderChart() {
   let races;
-  if (currentDay === 'sat')      races = rawData.sat;
-  else if (currentDay === 'sun') races = rawData.sun;
-  else                           races = [...(rawData.sat || []), ...(rawData.sun || [])];
+  races = currentDay === 'sat' ? rawData.sat : rawData.sun;
 
   const chart = document.getElementById('lane-chart');
 
@@ -722,13 +787,22 @@ function updateStats(result, nRaces, bestLane, maxAdv) {
 }
 
 // ─── Schedule awareness ───────────────────────────────────────────────────────
-// Reads data/schedule.json to know whether the selected regatta is:
-//   "live"     — racing today
-//   "upcoming" — racing in the future
-//   "historic" — no future races found
 
-let scheduleData = null; // cached schedule.json contents
+let scheduleData = null;
 let refreshTimer  = null;
+
+// Friendly display names for regatta codes
+const REGATTA_DISPLAY = {
+  arb:              'ARB',
+  westelijke:       'Westelijke',
+  hollandia:        'Hollandia',
+  raceroei:         'Raceroei',
+  hollandbeker:     'Holland Beker',
+  voorjaarsregatta: 'Voorjaarsregatta',
+  bvr:              'BvR',
+  nsrf:             'NSRF',
+  diyr:             'DIYR',
+};
 
 async function loadSchedule() {
   try {
@@ -741,19 +815,13 @@ async function loadSchedule() {
 
 function getRegattaStatus(regattaCode, selectedYear) {
   if (!scheduleData) return 'historic';
-
   const info = scheduleData.regattas?.[regattaCode];
   if (!info) return 'historic';
-
-  const today     = new Date().toISOString().slice(0, 10);
-  const dates     = info.dates || [];
-  const thisYear  = new Date().getFullYear().toString();
-
-  // Only show live/upcoming if viewing the current year
+  const today    = new Date().toISOString().slice(0, 10);
+  const thisYear = new Date().getFullYear().toString();
   if (selectedYear !== thisYear) return 'historic';
-
-  if (dates.includes(today))                        return 'live';
-  if (dates.some(d => d > today))                   return 'upcoming';
+  if (info.dates.includes(today))           return 'live';
+  if (info.dates.some(d => d > today))      return 'upcoming';
   return 'historic';
 }
 
@@ -765,21 +833,83 @@ function getNextRaceDate(regattaCode) {
   return (info.dates || []).find(d => d >= today) || null;
 }
 
+// ─── Live / upcoming buttons ──────────────────────────────────────────────────
+// Scans schedule.json and renders a button for every regatta that is
+// live today or upcoming. Clicking a button selects that regatta directly.
+
+function renderScheduleButtons() {
+  const container = document.getElementById('live-buttons');
+  if (!scheduleData) { container.classList.remove('visible'); return; }
+
+  const today    = new Date().toISOString().slice(0, 10);
+  const thisYear = new Date().getFullYear().toString();
+  const buttons  = [];
+
+  for (const [code, info] of Object.entries(scheduleData.regattas || {})) {
+    const dates  = info.dates || [];
+    const isLive = dates.includes(today);
+    const isUp   = !isLive && dates.some(d => d > today);
+    if (!isLive && !isUp) continue;
+
+    const label   = REGATTA_DISPLAY[code] || code;
+    const next    = dates.find(d => d >= today);
+    const dateStr = next ? new Date(next + 'T12:00:00').toLocaleDateString(
+      [], {day:'numeric', month:'short'}) : '';
+
+    if (isLive) {
+      buttons.push(`
+        <button class="btn-live" onclick="jumpToRegatta('${code}','${thisYear}')">
+          <span class="live-dot"></span>
+          ${label} — Live
+        </button>`);
+    } else {
+      buttons.push(`
+        <button class="btn-upcoming" onclick="jumpToRegatta('${code}','${thisYear}')">
+          📅 ${label}${dateStr ? ' — ' + dateStr : ''}
+        </button>`);
+    }
+  }
+
+  if (buttons.length > 0) {
+    container.innerHTML = buttons.join('');
+    container.classList.add('visible');
+  } else {
+    container.classList.remove('visible');
+  }
+}
+
+// Jump to a specific regatta + year directly, bypassing the dropdowns
+async function jumpToRegatta(code, year) {
+  const regattaSel = document.getElementById('regatta-select');
+  regattaSel.value = code;
+  // Repopulate years for this regatta, then select the right year
+  await populateYears(code);
+  const yearSel = document.getElementById('year-select');
+  // Add the year as an option if not present (upcoming regattas have no data yet)
+  if (![...yearSel.options].some(o => o.value === year)) {
+    const o = document.createElement('option');
+    o.value = year; o.textContent = year;
+    yearSel.insertBefore(o, yearSel.firstChild);
+  }
+  yearSel.value = year;
+  await loadData();
+}
+
+// ─── Status pill + upcoming banner ───────────────────────────────────────────
+
 function updateStatusPill() {
-  const regatta    = document.getElementById('regatta-select').value;
-  const year       = document.getElementById('year-select').value;
-  const status     = getRegattaStatus(regatta, year);
-  const pill       = document.getElementById('last-updated');
-  const dotEl      = pill.closest?.('.meta-pill')?.querySelector('.dot') ||
-                     document.querySelector('.meta-pill .dot');
+  const regatta = document.getElementById('regatta-select').value;
+  const year    = document.getElementById('year-select').value;
+  const status  = getRegattaStatus(regatta, year);
+  const pill    = document.getElementById('last-updated');
+  const dotEl   = document.querySelector('.meta-pill .dot');
 
   if (status === 'live') {
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const timeStr = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     pill.textContent = `Live — last updated ${timeStr}`;
     if (dotEl) { dotEl.style.background = '#4fc3f7'; dotEl.style.display = ''; }
   } else if (status === 'upcoming') {
-    const next = getNextRaceDate(regatta);
+    const next    = getNextRaceDate(regatta);
     const dateStr = next ? new Date(next + 'T12:00:00').toLocaleDateString(
       [], {weekday:'short', day:'numeric', month:'short'}) : '';
     pill.textContent = `Upcoming${dateStr ? ' — ' + dateStr : ''}`;
@@ -790,36 +920,53 @@ function updateStatusPill() {
   }
 }
 
-// ─── Smart refresh ────────────────────────────────────────────────────────────
-// Live: refresh every 15 min (matching the Action cadence)
-// Everything else: no auto-refresh needed
-
-function scheduleRefresh() {
-  if (refreshTimer) clearTimeout(refreshTimer);
-
+// Show an "upcoming" placeholder in the chart area instead of "no data"
+function maybeShowUpcomingBanner() {
   const regatta = document.getElementById('regatta-select').value;
   const year    = document.getElementById('year-select').value;
   const status  = getRegattaStatus(regatta, year);
+  if (status !== 'upcoming') return false;
 
-  if (status === 'live') {
-    // Refresh every 15 minutes, aligned to the clock
-    // e.g. if it's 10:07, next refresh at 10:15
-    const now     = new Date();
-    const msInMin = now.getSeconds() * 1000 + now.getMilliseconds();
-    const minInCycle = now.getMinutes() % 15;
-    const msUntilNext = (15 - minInCycle) * 60 * 1000 - msInMin;
-    refreshTimer = setTimeout(async () => {
-      await loadData();
-      scheduleRefresh();
-    }, msUntilNext);
-    console.log(`Live mode: next refresh in ${Math.round(msUntilNext/1000)}s`);
-  }
-  // For historic/upcoming we don't auto-refresh
+  const next    = getNextRaceDate(regatta);
+  const dateStr = next ? new Date(next + 'T12:00:00').toLocaleDateString(
+    [], {weekday:'long', day:'numeric', month:'long'}) : 'soon';
+  const name    = REGATTA_DISPLAY[regatta] || regatta;
+
+  document.getElementById('lane-chart').innerHTML = `
+    <div class="upcoming-banner">
+      <div class="ub-date">📅 ${dateStr}</div>
+      <p>${name} ${year} hasn't started yet.<br>Data will appear here once racing begins.</p>
+    </div>`;
+  return true;
 }
 
-// ─── Patch loadData to update status pill after loading ──────────────────────
+// ─── Smart refresh ────────────────────────────────────────────────────────────
+
+function scheduleRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const regatta = document.getElementById('regatta-select').value;
+  const year    = document.getElementById('year-select').value;
+  if (getRegattaStatus(regatta, year) !== 'live') return;
+
+  const now          = new Date();
+  const msInMin      = now.getSeconds() * 1000 + now.getMilliseconds();
+  const minInCycle   = now.getMinutes() % 15;
+  const msUntilNext  = (15 - minInCycle) * 60 * 1000 - msInMin;
+  refreshTimer = setTimeout(async () => { await loadData(); scheduleRefresh(); }, msUntilNext);
+  console.log(`Live mode: next refresh in ${Math.round(msUntilNext / 1000)}s`);
+}
+
+// ─── Patch loadData ───────────────────────────────────────────────────────────
 const _originalLoadData = loadData;
 loadData = async function() {
+  // For upcoming regattas show the banner instead of trying to load data
+  if (maybeShowUpcomingBanner()) {
+    updateStatusPill();
+    document.getElementById('last-updated').textContent =
+      document.getElementById('last-updated').textContent; // keep pill text
+    updateStats(null, 0);
+    return;
+  }
   await _originalLoadData();
   updateStatusPill();
   scheduleRefresh();
@@ -829,9 +976,9 @@ loadData = async function() {
 document.getElementById('regatta-select').addEventListener('change', onRegattaChange);
 document.getElementById('year-select').addEventListener('change', loadData);
 
-// Boot: load schedule first, then data
 (async () => {
   await loadSchedule();
+  renderScheduleButtons();   // show live/upcoming buttons at the top
   await onRegattaChange();
 })();
 </script>
