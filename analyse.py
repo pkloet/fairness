@@ -102,97 +102,110 @@ def races_to_long(races):
 
 def fit_lmm(df):
     """
-    Fit the linear mixed model:
-        time ~ C(lane) + (1 | race)
+    Fit the linear mixed model with sum-to-zero (deviation) coding:
+        time ~ C(lane, Sum) + (1 | race)
 
-    Returns a dict with lane effects, SEs, p-values, and overall p-value.
-    Returns None if data is insufficient.
+    Sum-to-zero coding means every lane gets its own coefficient and SE —
+    no lane is silently chosen as a zero-SE reference. The constraint is
+    sum(alpha_j) = 0, so each alpha_j is that lane's deviation from the
+    grand mean. We then shift all effects so the fastest lane = 0 for
+    display, but every lane — including the fastest — retains its honest SE.
+
+    The underlying model fit, likelihood, and overall p-value are identical
+    to treatment coding; only the parameterisation changes.
     """
     if df.empty or df["race"].nunique() < 5:
         return None
 
     # Only include lanes with at least MIN_N observations
     lane_counts = df.groupby("lane")["time"].count()
-    valid_lanes = lane_counts[lane_counts >= MIN_N].index.tolist()
+    valid_lanes = sorted(lane_counts[lane_counts >= MIN_N].index.tolist())
     if len(valid_lanes) < 2:
         return None
 
     df = df[df["lane"].isin(valid_lanes)].copy()
+    n_per_lane = df.groupby("lane")["time"].count().to_dict()
 
-    # Use the most frequent lane as the reference (to minimise intercept SE)
-    ref_lane = df["lane"].value_counts().idxmax()
-    # Relevel: put ref_lane first so C(lane) uses it as baseline
-    df["lane"] = pd.Categorical(df["lane"],
-                                categories=[ref_lane] +
-                                           [l for l in sorted(valid_lanes) if l != ref_lane])
+    # ── Build sum-to-zero contrast matrix manually ───────────────────────────
+    # For k lanes, create k-1 orthogonal sum-to-zero contrasts.
+    # Each column c_j satisfies sum(c_j) = 0 and c_j[j] = 1, c_j[k] = -1.
+    # This is the standard Helmert/sum coding approach.
+    # We add these as numeric columns so statsmodels sees plain regression.
+    k = len(valid_lanes)
+
+    # Contrast matrix: shape (k, k-1)
+    # Column j: +1 for lane j, -1 for last lane, 0 elsewhere
+    contrasts = np.zeros((k, k - 1))
+    for j in range(k - 1):
+        contrasts[j, j]  =  1.0
+        contrasts[k-1, j] = -1.0
+
+    lane_to_idx = {lane: i for i, lane in enumerate(valid_lanes)}
+
+    # Add contrast columns to df
+    for j in range(k - 1):
+        col = f"z{j}"
+        df[col] = df["lane"].map(lambda l: contrasts[lane_to_idx[l], j])
+
+    formula = "time ~ " + " + ".join(f"z{j}" for j in range(k - 1))
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
-            model  = smf.mixedlm("time ~ C(lane)", df, groups=df["race"])
+            model  = smf.mixedlm(formula, df, groups=df["race"])
             result = model.fit(reml=True, method="lbfgs", disp=False)
         except Exception as e:
             print(f"    [WARN] Model failed: {e} — falling back to row-mean method")
             return fit_row_mean_fallback(df)
 
-    # ── Extract fixed effects ────────────────────────────────────────────────
-    fe     = result.fe_params      # Series: Intercept, C(lane)[T.L2], ...
-    fe_se  = result.bse            # standard errors
-    fe_pv  = result.pvalues        # p-values (t-test, df from Satterthwaite approx)
+    fe    = result.fe_params   # Intercept, z0, z1, ...
+    fe_se = result.bse
+    mu    = fe["Intercept"]    # grand mean
 
-    # Build lane effect dict relative to reference lane
-    lane_effects_raw = {}
-    lane_se_raw      = {}
-    lane_pv_raw      = {}
-    n_per_lane       = df.groupby("lane")["time"].count().to_dict()
+    # ── Recover per-lane effects: alpha = C @ beta_contrasts ─────────────────
+    beta = np.array([fe.get(f"z{j}", 0.0) for j in range(k - 1)])
+    V_beta = result.cov_params().loc[
+        [f"z{j}" for j in range(k - 1)],
+        [f"z{j}" for j in range(k - 1)]
+    ].values  # (k-1) x (k-1) covariance matrix
 
-    # Reference lane effect = 0 by construction
-    ref_lane_num = int(ref_lane[1:])
-    lane_effects_raw[ref_lane] = 0.0
-    lane_se_raw[ref_lane]      = 0.0
-    lane_pv_raw[ref_lane]      = 1.0
+    # Lane effects (deviations from grand mean)
+    alpha     = contrasts @ beta                          # shape (k,)
+    var_alpha = np.array([contrasts[i] @ V_beta @ contrasts[i] for i in range(k)])
+    se_alpha  = np.sqrt(np.maximum(var_alpha, 0))
 
-    for param_name, coef in fe.items():
-        if param_name == "Intercept":
-            continue
-        # param_name looks like "C(lane)[T.L3]"
-        lane = param_name.split("[T.")[-1].rstrip("]")
-        lane_effects_raw[lane] = coef
-        lane_se_raw[lane]      = fe_se[param_name]
-        lane_pv_raw[lane]      = fe_pv[param_name]
+    # t-statistic and p-value for each lane vs grand mean
+    t_stats = alpha / np.where(se_alpha > 0, se_alpha, np.nan)
+    # Use normal approximation (large sample) for p-values
+    pvals   = 2 * stats.norm.sf(np.abs(t_stats))
 
-    # ── Re-reference to fastest lane (minimum effect = 0) ───────────────────
-    min_effect = min(lane_effects_raw.values())
-    lanes_out  = {}
-    for lane, eff in lane_effects_raw.items():
-        lane_num = int(lane[1:])
-        adjusted = eff - min_effect   # shift so fastest = 0
-        lanes_out[str(lane_num)] = {
-            "effect": round(adjusted, 4),
-            "se":     round(lane_se_raw[lane], 4),
-            "n":      int(n_per_lane.get(lane, 0)),
-            "p":      round(float(lane_pv_raw[lane]), 4),
-            "sig":    sig_stars(lane_pv_raw[lane]),
-            # p-value is vs reference lane, not vs fastest —
-            # we'll recompute vs fastest below
-        }
-
-    # ── Find reference lane for output ──────────────────────────────────────
-    fastest_lane = min(lane_effects_raw, key=lane_effects_raw.get)
+    # ── Shift so fastest lane = 0 ────────────────────────────────────────────
+    min_alpha    = alpha.min()
+    fastest_idx  = int(np.argmin(alpha))
+    fastest_lane = valid_lanes[fastest_idx]
     fastest_lane_num = int(fastest_lane[1:])
 
-    # ── Overall F-test: are any lane effects non-zero? ───────────────────────
-    # Likelihood ratio test: compare full model vs intercept-only
+    lanes_out = {}
+    for i, lane in enumerate(valid_lanes):
+        lane_num = int(lane[1:])
+        lanes_out[str(lane_num)] = {
+            "effect": round(float(alpha[i] - min_alpha), 4),
+            "se":     round(float(se_alpha[i]), 4),
+            "n":      int(n_per_lane.get(lane, 0)),
+            "p":      round(float(pvals[i]), 4),
+            "sig":    sig_stars(float(pvals[i])),
+        }
+
+    # ── Overall likelihood ratio test ────────────────────────────────────────
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
-            model_null = smf.mixedlm("time ~ 1", df, groups=df["race"])
-            result_null = model_null.fit(reml=False, method="lbfgs", disp=False)
-            result_full = smf.mixedlm("time ~ C(lane)", df, groups=df["race"]
+            result_null = smf.mixedlm("time ~ 1", df, groups=df["race"]
                                       ).fit(reml=False, method="lbfgs", disp=False)
-            lr_stat = 2 * (result_full.llf - result_null.llf)
-            df_diff = len(valid_lanes) - 1
-            p_overall = float(stats.chi2.sf(lr_stat, df=df_diff))
+            result_full = smf.mixedlm(formula, df, groups=df["race"]
+                                      ).fit(reml=False, method="lbfgs", disp=False)
+            lr_stat   = 2 * (result_full.llf - result_null.llf)
+            p_overall = float(stats.chi2.sf(lr_stat, df=k - 1))
         except Exception:
             p_overall = float("nan")
 
@@ -202,7 +215,7 @@ def fit_lmm(df):
         "p_overall":      round(p_overall, 4) if not np.isnan(p_overall) else None,
         "sig_overall":    (p_overall < 0.05) if not np.isnan(p_overall) else None,
         "reference_lane": fastest_lane_num,
-        "model":          "lmm",
+        "model":          "lmm_sum_coding",
     }
 
 
