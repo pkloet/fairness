@@ -365,8 +365,9 @@
     margin-top: 1.5rem;
     font-size: 13px;
     color: var(--text-secondary);
-    line-height: 1.7;
+    line-height: 1.9;
   }
+  .explain strong { font-weight: 600; }
 
   /* n-races badge */
   .n-badge {
@@ -516,25 +517,54 @@
   </div>
 
   <div class="chart-section">
-    <div class="chart-title">Time disadvantage per lane vs fastest lane (seconds, row-normalised)</div>
+    <div class="chart-title">Time disadvantage per lane vs fastest lane (seconds) — linear mixed model</div>
     <div class="lane-chart" id="lane-chart">
       <div class="state-box"><div class="spinner"></div><p>Loading race data…</p></div>
     </div>
     <div class="legend">
       <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#1a5fa8,#2980d4)"></div> Lane disadvantage</div>
       <div class="legend-item"><div class="legend-swatch" style="background:linear-gradient(90deg,#a07c28,#e8b84b)"></div> Fastest lane</div>
-      <div class="legend-item"><div class="legend-err"></div> Standard error</div>
+      <div class="legend-item"><div class="legend-err"></div> Standard error (±1 SE)</div>
+      <div class="legend-item"><span style="color:var(--gold);font-size:13px">† * ** ***</span>&nbsp; Significance</div>
     </div>
   </div>
 
   <div class="explain">
-    Each race result is normalised by subtracting the row mean, removing boat speed differences between races. The remaining signal is the lane effect: how many seconds slower (or faster) each lane is compared to the average. A value of 0 means exactly average — negative bars appear to the left. Error bars show ±1 standard error.
+    <strong style="color:var(--text-primary)">How it's calculated</strong><br><br>
+    Lane times are modelled using a <strong>linear mixed model</strong>:
+    <em>time = lane effect + race effect + noise</em>.
+    Each race gets its own random intercept that absorbs differences in boat class and crew speed —
+    so only the lane signal remains. This correctly handles the fact that outer lanes appear
+    in fewer races than inner lanes. Lanes are assigned randomly in heats (<em>voorwedstrijden</em>),
+    which makes the lane effects unbiased and directly interpretable.
+    <br><br>
+    <strong style="color:var(--text-primary)">What the bars show</strong><br><br>
+    Each bar shows how many seconds slower that lane is on average compared to the fastest lane (always 0).
+    Error bars show ±1 standard error from the model — a measure of how certain the estimate is.
+    A narrow bar means many races contributed; a wide bar means few races and more uncertainty.
+    <br><br>
+    <strong style="color:var(--text-primary)">Significance symbols</strong><br><br>
+    The symbols next to each lane test whether its disadvantage is distinguishable from zero
+    given the noise in the data:
+    <br>
+    <span style="color:var(--gold)">†</span>&nbsp; p &lt; 0.10 — borderline, treat with caution<br>
+    <span style="color:var(--gold)">*</span>&nbsp; p &lt; 0.05 — significant by the standard threshold<br>
+    <span style="color:var(--gold)">**</span>&nbsp; p &lt; 0.01 — strong evidence<br>
+    <span style="color:var(--gold)">***</span>&nbsp; p &lt; 0.001 — very strong evidence<br>
+    <br>
+    The banner above the chart shows an overall test: whether <em>any</em> lane differences exist
+    at all, using a likelihood ratio test comparing a model with lane effects to one without.
+    <br><br>
+    <strong style="color:var(--text-primary)">Important caveat</strong><br><br>
+    A significant result means the effect is <em>detectable</em>, not necessarily large.
+    With many races even a small difference becomes significant. Always read the effect size
+    in seconds alongside the p-value.
   </div>
 
 </div>
 
 <script>
-const MIN_N = 10; // minimum races per lane to show a result
+const MIN_N = 3; // minimum races per lane for model to include lane
 
 let currentDay = 'sat';
 let rawData = { sat: [], sun: [] };
