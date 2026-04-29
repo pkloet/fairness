@@ -1,0 +1,40 @@
+{
+  "generated": "2026-04-29",
+  "regattas": {
+    "westelijke": {
+      "name": "Westelijke Regatta",
+      "dates": [
+        "2026-05-16",
+        "2026-05-17"
+      ]
+    },
+    "arb": {
+      "name": "ARB Bosbaanwedstrijden",
+      "dates": [
+        "2026-05-30",
+        "2026-05-31"
+      ]
+    },
+    "raceroei": {
+      "name": "Raceroei Regatta",
+      "dates": [
+        "2026-06-13",
+        "2026-06-14"
+      ]
+    },
+    "hollandbeker": {
+      "name": "Koninklijke- Holland Beker",
+      "dates": [
+        "2026-06-20",
+        "2026-06-21"
+      ]
+    },
+    "nsrf": {
+      "name": "NSRF Slotwedstrijden",
+      "dates": [
+        "2026-07-04",
+        "2026-07-05"
+      ]
+    }
+  }
+}
