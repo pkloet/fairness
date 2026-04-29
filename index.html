@@ -721,20 +721,119 @@ function updateStats(result, nRaces, bestLane, maxAdv) {
   document.getElementById('s-lanes').textContent = lanesWithEnough + '/8';
 }
 
-// ─── Auto-refresh every 60 min on weekends ───────────────────────────────────
-function scheduleRefresh() {
-  const now = new Date();
-  const day = now.getDay();
-  const interval = (day === 0 || day === 6) ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  setTimeout(() => { loadData(); scheduleRefresh(); }, interval);
+// ─── Schedule awareness ───────────────────────────────────────────────────────
+// Reads data/schedule.json to know whether the selected regatta is:
+//   "live"     — racing today
+//   "upcoming" — racing in the future
+//   "historic" — no future races found
+
+let scheduleData = null; // cached schedule.json contents
+let refreshTimer  = null;
+
+async function loadSchedule() {
+  try {
+    const res = await fetch('data/schedule.json');
+    if (res.ok) scheduleData = await res.json();
+  } catch(e) {
+    scheduleData = null;
+  }
 }
+
+function getRegattaStatus(regattaCode, selectedYear) {
+  if (!scheduleData) return 'historic';
+
+  const info = scheduleData.regattas?.[regattaCode];
+  if (!info) return 'historic';
+
+  const today     = new Date().toISOString().slice(0, 10);
+  const dates     = info.dates || [];
+  const thisYear  = new Date().getFullYear().toString();
+
+  // Only show live/upcoming if viewing the current year
+  if (selectedYear !== thisYear) return 'historic';
+
+  if (dates.includes(today))                        return 'live';
+  if (dates.some(d => d > today))                   return 'upcoming';
+  return 'historic';
+}
+
+function getNextRaceDate(regattaCode) {
+  if (!scheduleData) return null;
+  const info  = scheduleData.regattas?.[regattaCode];
+  if (!info)  return null;
+  const today = new Date().toISOString().slice(0, 10);
+  return (info.dates || []).find(d => d >= today) || null;
+}
+
+function updateStatusPill() {
+  const regatta    = document.getElementById('regatta-select').value;
+  const year       = document.getElementById('year-select').value;
+  const status     = getRegattaStatus(regatta, year);
+  const pill       = document.getElementById('last-updated');
+  const dotEl      = pill.closest?.('.meta-pill')?.querySelector('.dot') ||
+                     document.querySelector('.meta-pill .dot');
+
+  if (status === 'live') {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    pill.textContent = `Live — last updated ${timeStr}`;
+    if (dotEl) { dotEl.style.background = '#4fc3f7'; dotEl.style.display = ''; }
+  } else if (status === 'upcoming') {
+    const next = getNextRaceDate(regatta);
+    const dateStr = next ? new Date(next + 'T12:00:00').toLocaleDateString(
+      [], {weekday:'short', day:'numeric', month:'short'}) : '';
+    pill.textContent = `Upcoming${dateStr ? ' — ' + dateStr : ''}`;
+    if (dotEl) { dotEl.style.background = '#e8b84b'; dotEl.style.display = ''; }
+  } else {
+    pill.textContent = 'Historic data';
+    if (dotEl) dotEl.style.display = 'none';
+  }
+}
+
+// ─── Smart refresh ────────────────────────────────────────────────────────────
+// Live: refresh every 15 min (matching the Action cadence)
+// Everything else: no auto-refresh needed
+
+function scheduleRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+
+  const regatta = document.getElementById('regatta-select').value;
+  const year    = document.getElementById('year-select').value;
+  const status  = getRegattaStatus(regatta, year);
+
+  if (status === 'live') {
+    // Refresh every 15 minutes, aligned to the clock
+    // e.g. if it's 10:07, next refresh at 10:15
+    const now     = new Date();
+    const msInMin = now.getSeconds() * 1000 + now.getMilliseconds();
+    const minInCycle = now.getMinutes() % 15;
+    const msUntilNext = (15 - minInCycle) * 60 * 1000 - msInMin;
+    refreshTimer = setTimeout(async () => {
+      await loadData();
+      scheduleRefresh();
+    }, msUntilNext);
+    console.log(`Live mode: next refresh in ${Math.round(msUntilNext/1000)}s`);
+  }
+  // For historic/upcoming we don't auto-refresh
+}
+
+// ─── Patch loadData to update status pill after loading ──────────────────────
+const _originalLoadData = loadData;
+loadData = async function() {
+  await _originalLoadData();
+  updateStatusPill();
+  scheduleRefresh();
+};
 
 // ─── Wire up controls & boot ──────────────────────────────────────────────────
 document.getElementById('regatta-select').addEventListener('change', onRegattaChange);
 document.getElementById('year-select').addEventListener('change', loadData);
 
-onRegattaChange();
-scheduleRefresh();
+// Boot: load schedule first, then data
+(async () => {
+  await loadSchedule();
+  await onRegattaChange();
+})();
 </script>
 </body>
 </html>
