@@ -457,13 +457,12 @@
 </div>
 
 <script>
-// ─── Data layer ─────────────────────────────────────────────────────────────
-// In production this reads from /data/{regatta}/{year}_sat.json etc.
-// For demonstration, synthetic data is generated that mirrors your real format.
+const MIN_N = 10; // minimum races per lane to show a result
 
 let currentDay = 'sat';
 let rawData = { sat: [], sun: [] };
 
+// ─── Day tabs ────────────────────────────────────────────────────────────────
 function setDay(day, btn) {
   currentDay = day;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -471,29 +470,80 @@ function setDay(day, btn) {
   renderChart();
 }
 
-// Populate year selector (last 10 years)
-const yearSel = document.getElementById('year-select');
-const currentYear = new Date().getFullYear();
-for (let y = currentYear; y >= currentYear - 9; y--) {
-  const o = document.createElement('option');
-  o.value = y; o.textContent = y;
-  if (y === currentYear) o.selected = true;
-  yearSel.appendChild(o);
+// ─── Dynamic year selector ───────────────────────────────────────────────────
+// Probes which years actually have data for the selected regatta, then
+// populates the year dropdown with only those years.
+
+const FIRST_YEAR = 2010;
+const THIS_YEAR  = new Date().getFullYear();
+
+async function populateYears(regatta) {
+  const yearSel = document.getElementById('year-select');
+  const prevYear = yearSel.value;
+  yearSel.innerHTML = '<option disabled>Checking…</option>';
+
+  // Probe all years in parallel — a HEAD request is enough to check existence
+  const years = [];
+  const probes = [];
+  for (let y = THIS_YEAR; y >= FIRST_YEAR; y--) {
+    years.push(y);
+    // Check sat file — if either sat or sun exists the year counts
+    probes.push(
+      fetch(`data/${regatta}/${y}_sat.json`, { method: 'HEAD' })
+        .then(r => r.ok)
+        .catch(() => false)
+    );
+  }
+  const results = await Promise.all(probes);
+  const availableYears = years.filter((_, i) => results[i]);
+
+  yearSel.innerHTML = '';
+  if (availableYears.length === 0) {
+    yearSel.innerHTML = '<option disabled>No data available</option>';
+    return null;
+  }
+
+  availableYears.forEach(y => {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y;
+    yearSel.appendChild(o);
+  });
+
+  // Try to keep the previously selected year if it's still available
+  if (availableYears.includes(Number(prevYear))) {
+    yearSel.value = prevYear;
+  }
+
+  return yearSel.value;
 }
-yearSel.addEventListener('change', loadData);
-document.getElementById('regatta-select').addEventListener('change', loadData);
 
 // ─── Load data ───────────────────────────────────────────────────────────────
+async function onRegattaChange() {
+  const regatta = document.getElementById('regatta-select').value;
+  document.getElementById('lane-chart').innerHTML =
+    '<div class="state-box"><div class="spinner"></div><p>Finding available years…</p></div>';
+
+  const year = await populateYears(regatta);
+  if (year) {
+    await loadData();
+  } else {
+    document.getElementById('lane-chart').innerHTML =
+      '<div class="state-box"><p>No data found for this regatta yet.</p></div>';
+    document.getElementById('last-updated').textContent = 'No data';
+    updateStats(null, 0);
+  }
+}
+
 async function loadData() {
   const regatta = document.getElementById('regatta-select').value;
   const year    = document.getElementById('year-select').value;
+  if (!year) return;
 
   document.getElementById('lane-chart').innerHTML =
     '<div class="state-box"><div class="spinner"></div><p>Loading race data…</p></div>';
   document.getElementById('last-updated').textContent = 'Loading…';
 
   try {
-    // Try to fetch real JSON files from /data/{regatta}/{year}_sat.json
     const [satRes, sunRes] = await Promise.allSettled([
       fetch(`data/${regatta}/${year}_sat.json`),
       fetch(`data/${regatta}/${year}_sun.json`)
@@ -502,39 +552,42 @@ async function loadData() {
     const satOk = satRes.status === 'fulfilled' && satRes.value.ok;
     const sunOk = sunRes.status === 'fulfilled' && sunRes.value.ok;
 
-    if (satOk || sunOk) {
-      rawData.sat = satOk ? await satRes.value.json() : [];
-      rawData.sun = sunOk ? await sunRes.value.json() : [];
-    } else {
-      // No real data yet — generate synthetic demo data
-      rawData = generateDemoData(regatta, year);
+    rawData.sat = satOk ? await satRes.value.json() : [];
+    rawData.sun = sunOk ? await sunRes.value.json() : [];
+
+    if (!satOk && !sunOk) {
+      document.getElementById('lane-chart').innerHTML =
+        '<div class="state-box"><p>No data file found for this regatta and year.</p></div>';
+      document.getElementById('last-updated').textContent = 'No data';
+      updateStats(null, 0);
+      return;
     }
 
     const now = new Date();
     document.getElementById('last-updated').textContent =
-      `Updated ${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      `Updated ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
 
     renderChart();
 
   } catch(e) {
-    rawData = generateDemoData(regatta, document.getElementById('year-select').value);
-    document.getElementById('last-updated').textContent = 'Demo data (no file found)';
-    renderChart();
+    document.getElementById('lane-chart').innerHTML =
+      '<div class="state-box"><p>Failed to load data. Please try again.</p></div>';
+    document.getElementById('last-updated').textContent = 'Error';
+    updateStats(null, 0);
   }
 }
 
-// ─── Compute fairness from raw race rows ─────────────────────────────────────
-// Input: array of arrays, each inner array has 8 slots (lanes 1-8), null for missing
-// Output: { means, se, n } arrays of length 8, zero-indexed (index 0 = lane 1)
+// ─── Fairness computation ─────────────────────────────────────────────────────
 function computeFairness(races) {
   if (!races || races.length === 0) return null;
 
   const nLanes = 8;
-  // Normalise each race by subtracting row mean (skipna)
+
+  // Row-normalise: subtract each race's own mean (ignoring nulls)
   const normalised = races.map(row => {
     const valid = row.filter(v => v !== null && v !== undefined && !isNaN(v));
     if (valid.length === 0) return row.map(() => null);
-    const mean = valid.reduce((a,b) => a+b, 0) / valid.length;
+    const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
     return row.map(v => (v !== null && v !== undefined && !isNaN(v)) ? v - mean : null);
   });
 
@@ -543,24 +596,23 @@ function computeFairness(races) {
     normalised.map(r => r[i]).filter(v => v !== null && v !== undefined && !isNaN(v))
   );
 
-  const means = colData.map(col => col.length > 0 ? col.reduce((a,b)=>a+b,0)/col.length : null);
+  const n     = colData.map(col => col.length);
+  const means = colData.map((col, i) =>
+    n[i] >= MIN_N ? col.reduce((a, b) => a + b, 0) / n[i] : null
+  );
   const stds  = colData.map((col, i) => {
-    if (col.length < 2) return null;
+    if (n[i] < MIN_N) return null;
     const m = means[i];
-    return Math.sqrt(col.reduce((a,b) => a + (b-m)**2, 0) / (col.length - 1));
+    return Math.sqrt(col.reduce((a, b) => a + (b - m) ** 2, 0) / (n[i] - 1));
   });
-  const n   = colData.map(col => col.length);
-  const se  = stds.map((s, i) => s !== null && n[i] > 0 ? s / Math.sqrt(n[i]) : null);
+  const se = stds.map((s, i) => s !== null ? s / Math.sqrt(n[i]) : null);
 
-  // Flip sign: positive = disadvantage (slower), reference = fastest (min mean)
+  // Reference: minimum mean across lanes that meet MIN_N
   const validMeans = means.filter(m => m !== null);
   if (validMeans.length === 0) return null;
   const minMean = Math.min(...validMeans);
-  const adjusted = means.map(m => m !== null ? -(m - minMean) : null);
-  // Wait — we want: disadvantage = how much SLOWER than the fastest lane
-  // fastest lane has mean closest to 0 after normalization
-  // slower lanes have higher adjusted values
-  // adjusted[i] = minMean - means[i]  (0 for best lane, positive for slower)
+
+  // Disadvantage: 0 for the fastest qualifying lane, positive = slower
   const disadvantage = means.map(m => m !== null ? m - minMean : null);
 
   return { means: disadvantage, se, n };
@@ -571,77 +623,85 @@ function renderChart() {
   let races;
   if (currentDay === 'sat')      races = rawData.sat;
   else if (currentDay === 'sun') races = rawData.sun;
-  else                           races = [...(rawData.sat||[]), ...(rawData.sun||[])];
+  else                           races = [...(rawData.sat || []), ...(rawData.sun || [])];
 
   const chart = document.getElementById('lane-chart');
 
   if (!races || races.length === 0) {
-    chart.innerHTML = '<div class="state-box"><p>No race data available for this selection.</p></div>';
+    chart.innerHTML = '<div class="state-box"><p>No race data available for this day.</p></div>';
     updateStats(null, 0);
     return;
   }
 
   const result = computeFairness(races);
   if (!result) {
-    chart.innerHTML = '<div class="state-box"><p>Could not compute fairness — check data format.</p></div>';
+    chart.innerHTML = '<div class="state-box"><p>Not enough data to compute fairness.</p></div>';
+    updateStats(null, 0);
     return;
   }
 
   const { means, se, n } = result;
 
-  // Find the best lane (lowest disadvantage = 0)
+  // Best lane = lane with disadvantage = 0 (and enough data)
   let bestLane = -1;
-  let bestVal = Infinity;
-  means.forEach((m, i) => { if (m !== null && m < bestVal) { bestVal = m; bestLane = i; } });
+  means.forEach((m, i) => { if (m !== null && m === 0) bestLane = i; });
 
-  // Chart range: total x span
-  const validMeans = means.map((m,i) => m !== null ? [m, se[i]||0] : null).filter(Boolean);
-  if (validMeans.length === 0) { chart.innerHTML = '<div class="state-box"><p>No valid lanes.</p></div>'; return; }
+  // Chart scale: based only on lanes with enough data
+  const validPairs = means.map((m, i) => m !== null ? m + (se[i] || 0) : 0);
+  const chartMax = Math.max(...validPairs) * 1.25 || 1;
 
-  const maxVal = Math.max(...validMeans.map(([m,s]) => m + (s||0)));
-  const chartMax = Math.max(maxVal * 1.25, 0.5);
-
-  // Build lanes HTML
   let html = '';
   for (let i = 0; i < 8; i++) {
-    const m = means[i];
-    const s = se[i];
+    const m   = means[i];
+    const s   = se[i];
     const cnt = n[i];
     const isBest = (i === bestLane);
-    const delay = i * 0.05;
+    const delay  = i * 0.05;
 
-    const hasData = m !== null && cnt > 0;
-
-    // Bar width as % of chartMax
-    const barPct  = hasData ? Math.max(0, m / chartMax * 100) : 0;
-    const errL    = hasData && s ? Math.max(0, (m - s) / chartMax * 100) : barPct;
-    const errR    = hasData && s ? Math.min(100, (m + s) / chartMax * 100) : barPct;
+    // Three states: enough data, some data but not enough, no data at all
+    const hasEnough = m !== null;           // means[i] is null when n < MIN_N
+    const hasSome   = !hasEnough && cnt > 0;
+    const hasNone   = cnt === 0;
 
     const laneClass = isBest ? ' best' : '';
     const fillClass = isBest ? ' best-lane' : '';
-    const valStr    = hasData ? (m >= 0 ? '+' : '') + m.toFixed(2) + 's' : '—';
-    const seStr     = hasData && s ? ' ±' + s.toFixed(2) : '';
-    const nBadge    = hasData ? `<span class="n-badge">n=${cnt}</span>` : '';
+
+    const barPct = hasEnough ? Math.max(0, m / chartMax * 100) : 0;
+    const errL   = hasEnough && s ? Math.max(0, (m - s) / chartMax * 100) : barPct;
+    const errR   = hasEnough && s ? Math.min(100, (m + s) / chartMax * 100) : barPct;
+
+    const valStr  = hasEnough ? (m >= 0 ? '+' : '') + m.toFixed(2) + 's' : '—';
+    const nBadge  = cnt > 0 ? `<span class="n-badge">n=${cnt}</span>` : '';
+
+    let barContent;
+    if (hasEnough) {
+      barContent = `
+        <div class="bar-fill${fillClass}" style="left:0%;width:${barPct.toFixed(2)}%"></div>
+        <div class="bar-err" style="left:${errL.toFixed(2)}%;width:${(errR - errL).toFixed(2)}%"></div>
+        <div class="boat-icon" style="left:calc(${barPct.toFixed(2)}% + 2px)">🚣</div>`;
+    } else if (hasSome) {
+      barContent = `<div class="no-data-bar">not enough data (n=${cnt}, need ${MIN_N})</div>`;
+    } else {
+      barContent = `<div class="no-data-bar">no data</div>`;
+    }
 
     html += `
     <div class="lane-row" style="animation-delay:${delay}s">
-      <div class="lane-label${laneClass}">${i+1}</div>
+      <div class="lane-label${laneClass}">${i + 1}</div>
       <div class="bar-track">
         <div class="zero-line" style="left:0%"></div>
-        ${hasData ? `
-        <div class="bar-fill${fillClass}" style="left:0%;width:${barPct.toFixed(2)}%"></div>
-        <div class="bar-err" style="left:${errL.toFixed(2)}%;width:${(errR-errL).toFixed(2)}%"></div>
-        <div class="boat-icon" style="left:calc(${barPct.toFixed(2)}% + 2px)">🚣</div>
-        ` : `<div class="no-data-bar">no data</div>`}
+        ${barContent}
       </div>
-      <div class="time-value${laneClass}">${valStr}${nBadge}<br><span class="se">${hasData && s ? '±'+s.toFixed(2)+'s se' : ''}</span></div>
+      <div class="time-value${laneClass}">
+        ${valStr}${nBadge}<br>
+        <span class="se">${hasEnough && s ? '±' + s.toFixed(2) + 's se' : ''}</span>
+      </div>
     </div>`;
   }
 
   // X-axis ticks
-  const ticks = [0, chartMax*0.25, chartMax*0.5, chartMax*0.75, chartMax];
-  const tickHtml = ticks.map(t => `<span class="x-tick">${t.toFixed(1)}s</span>`).join('');
-  html += `<div class="x-axis">${tickHtml}</div>`;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => t * chartMax);
+  html += `<div class="x-axis">${ticks.map(t => `<span class="x-tick">${t.toFixed(1)}s</span>`).join('')}</div>`;
 
   chart.innerHTML = html;
   updateStats(result, races.length, bestLane, chartMax);
@@ -650,53 +710,30 @@ function renderChart() {
 function updateStats(result, nRaces, bestLane, maxAdv) {
   document.getElementById('s-races').textContent = nRaces || '—';
   if (!result) {
-    document.getElementById('s-best').textContent = '—';
-    document.getElementById('s-max').textContent = '—';
+    document.getElementById('s-best').textContent  = '—';
+    document.getElementById('s-max').textContent   = '—';
     document.getElementById('s-lanes').textContent = '—';
     return;
   }
-  const lanesWithData = result.n.filter(c => c > 0).length;
-  document.getElementById('s-best').textContent  = bestLane >= 0 ? `Lane ${bestLane+1}` : '—';
-  document.getElementById('s-max').textContent   = maxAdv != null ? maxAdv.toFixed(2)+'s' : '—';
-  document.getElementById('s-lanes').textContent = lanesWithData + '/8';
-}
-
-// ─── Demo data generator ──────────────────────────────────────────────────────
-// Mimics your Python output: array of arrays, each with 8 slots, null for missing lanes
-function generateDemoData(regatta, year) {
-  const seed = regatta.charCodeAt(0) + Number(year);
-  let r = seed;
-  const rand = () => { r = (r * 1664525 + 1013904223) & 0xffffffff; return (r >>> 0) / 0xffffffff; };
-
-  // Lane biases (seconds): lane 1 = fastest, lane 8 = slowest, realistic spread
-  const baseBias = [0, 0.4, 0.9, 1.3, 1.5, 1.1, 0.6, 0.2].map(b => b + (rand()-0.5)*0.4);
-
-  function makeDay(nRaces) {
-    return Array.from({length: nRaces}, () => {
-      const baseTime = 330 + rand() * 60;
-      return Array.from({length: 8}, (_, lane) => {
-        if (rand() < 0.12) return null; // 12% chance missing lane
-        return parseFloat((baseTime + baseBias[lane] + (rand()-0.5)*4).toFixed(2));
-      });
-    });
-  }
-
-  return {
-    sat: makeDay(12 + Math.floor(rand()*10)),
-    sun: makeDay(10 + Math.floor(rand()*8))
-  };
+  const lanesWithEnough = result.means.filter(m => m !== null).length;
+  document.getElementById('s-best').textContent  = bestLane >= 0 ? `Lane ${bestLane + 1}` : '—';
+  document.getElementById('s-max').textContent   = maxAdv != null ? maxAdv.toFixed(2) + 's' : '—';
+  document.getElementById('s-lanes').textContent = lanesWithEnough + '/8';
 }
 
 // ─── Auto-refresh every 60 min on weekends ───────────────────────────────────
 function scheduleRefresh() {
   const now = new Date();
-  const day = now.getDay(); // 0=Sun, 6=Sat
-  const interval = (day === 0 || day === 6) ? 60*60*1000 : 24*60*60*1000;
+  const day = now.getDay();
+  const interval = (day === 0 || day === 6) ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
   setTimeout(() => { loadData(); scheduleRefresh(); }, interval);
 }
 
-// ─── Boot ─────────────────────────────────────────────────────────────────────
-loadData();
+// ─── Wire up controls & boot ──────────────────────────────────────────────────
+document.getElementById('regatta-select').addEventListener('change', onRegattaChange);
+document.getElementById('year-select').addEventListener('change', loadData);
+
+onRegattaChange();
 scheduleRefresh();
 </script>
 </body>
