@@ -1,54 +1,48 @@
 # .github/workflows/scrape.yml
 #
-# Two jobs:
+# Three jobs:
 #
-#   scrape-current  — runs every hour on Saturday + Sunday (race days).
-#                     Only scrapes the current year for all regattas.
-#                     Fast: ~2-5 minutes.
+#   update-schedule   — runs every Monday at 03:00 UTC.
+#                       Scrapes time-team.nl/en/info/regattas and saves
+#                       data/schedule.json with upcoming race dates.
 #
-#   scrape-history  — runs once a week (Monday 03:00 UTC).
-#                     Scrapes all regattas from 2010 to today.
-#                     Skips years whose JSON files already exist.
-#                     Slow: can take 30-60 minutes the first time, fast after.
+#   scrape-live       — runs every 15 minutes, always.
+#                       Reads schedule.json first — if today is NOT a race
+#                       day it exits in ~5 seconds (costs almost no Action
+#                       minutes). If today IS a race day it runs the full
+#                       scraper for the current year only.
 #
-# Both jobs commit any new/changed JSON files back to the repo,
-# which triggers GitHub Pages to redeploy automatically.
+#   scrape-history    — runs every Monday at 04:00 UTC (after update-schedule).
+#                       Scrapes all regattas from 2010 to today, skipping
+#                       years whose JSON files already exist.
 #
-# You can also trigger either job manually via the GitHub Actions UI
-# (workflow_dispatch).
+# All jobs can also be triggered manually from the Actions tab.
 
 name: Scrape regatta data
 
 on:
   schedule:
-    # Every hour on Saturday and Sunday (UTC).
-    # Regattas are typically Dutch/European so UTC is close enough.
-    # Cron does not support day-of-week filtering natively for hours,
-    # so we run every hour on Sat (6) and Sun (0) only.
-    - cron: "0 * * * 0"   # every hour, Sundays
-    - cron: "0 * * * 6"   # every hour, Saturdays
+    - cron: "0 3 * * 1"      # Monday 03:00 UTC — update schedule
+    - cron: "0 4 * * 1"      # Monday 04:00 UTC — history backfill
+    - cron: "*/15 * * * *"   # Every 15 minutes — live scrape
 
-    # Weekly historical backfill — Monday at 03:00 UTC
-    - cron: "0 3 * * 1"
-
-  # Allow manual trigger from the Actions tab
   workflow_dispatch:
     inputs:
       job:
         description: "Which job to run"
         required: true
-        default: "current"
+        default: "live"
         type: choice
         options:
-          - current
+          - schedule
+          - live
           - history
-          - both
       regatta:
         description: "Regatta code (leave empty for all)"
         required: false
         default: ""
       year:
-        description: "Year (leave empty for default range)"
+        description: "Year (leave empty for default)"
         required: false
         default: ""
       force:
@@ -59,30 +53,30 @@ on:
         options:
           - "false"
           - "true"
+      force_race_day:
+        description: "Treat today as a race day (skip schedule check)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
 
-  # ── Hourly weekend scrape (current year only) ───────────────────────────────
-  scrape-current:
-    name: Scrape current year
+  # ── 1. Update schedule ────────────────────────────────────────────────────
+  update-schedule:
+    name: Update race calendar
     runs-on: ubuntu-latest
 
-    # Only run on the schedule triggers that correspond to Sat/Sun,
-    # OR when manually triggered with job=current or job=both.
     if: |
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (github.event.inputs.job == 'current' || github.event.inputs.job == 'both'))
+      (github.event_name == 'schedule' && github.event.schedule == '0 3 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'schedule')
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          # Fetch full history so git status works correctly
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
@@ -90,67 +84,109 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Build scrape command
-        id: cmd
-        run: |
-          # Start with current year only
-          CMD="python scrape.py --since $(date +%Y)"
+      - name: Parse regatta calendar
+        run: python parse_schedule.py
 
-          # Optional: single regatta from manual trigger
+      - name: Commit schedule
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/schedule.json
+          if git diff --cached --quiet; then
+            echo "Schedule unchanged."
+          else
+            git commit -m "schedule: update race calendar [$(date -u '+%Y-%m-%d')]"
+            git pull --rebase && git push
+          fi
+
+  # ── 2. Live scrape (every 15 min, smart exit if no race) ─────────────────
+  scrape-live:
+    name: Live scrape
+    runs-on: ubuntu-latest
+
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'live')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if today is a race day
+        id: check
+        run: |
+          if [ "${{ github.event.inputs.force_race_day }}" = "true" ]; then
+            echo "race_day=true" >> $GITHUB_OUTPUT
+            echo "Forced race day."
+            exit 0
+          fi
+
+          python - <<'EOF'
+          import sys, os
+          sys.path.insert(0, '.')
+          from parse_schedule import is_race_day
+          if is_race_day():
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write('race_day=true\n')
+              print("Today IS a race day — will scrape.")
+          else:
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write('race_day=false\n')
+              print("No race today — exiting early.")
+          EOF
+
+      - name: Run scraper (race days only)
+        if: steps.check.outputs.race_day == 'true'
+        run: |
+          CMD="python scrape.py --since $(date +%Y) --force"
+
           if [ -n "${{ github.event.inputs.regatta }}" ]; then
             CMD="$CMD --regatta ${{ github.event.inputs.regatta }}"
           fi
 
-          # Optional: single year from manual trigger
           if [ -n "${{ github.event.inputs.year }}" ]; then
-            CMD="python scrape.py --year ${{ github.event.inputs.year }}"
+            CMD="python scrape.py --year ${{ github.event.inputs.year }} --force"
             if [ -n "${{ github.event.inputs.regatta }}" ]; then
               CMD="$CMD --regatta ${{ github.event.inputs.regatta }}"
             fi
           fi
 
-          # Force flag
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            CMD="$CMD --force"
-          fi
-
-          echo "cmd=$CMD" >> $GITHUB_OUTPUT
           echo "Running: $CMD"
+          $CMD
 
-      - name: Run scraper
-        run: ${{ steps.cmd.outputs.cmd }}
-
-      - name: Commit and push new data
+      - name: Commit new data
+        if: steps.check.outputs.race_day == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
-          # Only commit if there are actual changes
           if git diff --cached --quiet; then
-            echo "No new data to commit."
+            echo "No new data."
           else
-            git commit -m "data: update current year [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+            git commit -m "data: live update [$(date -u '+%Y-%m-%d %H:%M UTC')]"
             git pull --rebase && git push
           fi
 
-  # ── Weekly historical backfill ───────────────────────────────────────────────
+  # ── 3. Weekly history backfill ────────────────────────────────────────────
   scrape-history:
-    name: Scrape full history
+    name: Full history backfill
     runs-on: ubuntu-latest
 
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '0 3 * * 1') ||
-      (github.event_name == 'workflow_dispatch' &&
-       (github.event.inputs.job == 'history' || github.event.inputs.job == 'both'))
+      (github.event_name == 'schedule' && github.event.schedule == '0 4 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'history')
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
@@ -158,8 +194,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Build scrape command
-        id: cmd
+      - name: Run historical scraper
         run: |
           CMD="python scrape.py"
 
@@ -178,19 +213,16 @@ jobs:
             CMD="$CMD --force"
           fi
 
-          echo "cmd=$CMD" >> $GITHUB_OUTPUT
           echo "Running: $CMD"
+          $CMD
 
-      - name: Run scraper
-        run: ${{ steps.cmd.outputs.cmd }}
-
-      - name: Commit and push new data
+      - name: Commit new data
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
           if git diff --cached --quiet; then
-            echo "No new data to commit."
+            echo "No new data."
           else
             git commit -m "data: historical backfill [$(date -u '+%Y-%m-%d %H:%M UTC')]"
             git pull --rebase && git push
