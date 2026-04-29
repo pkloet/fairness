@@ -630,9 +630,14 @@ async function loadData() {
       return;
     }
 
-    const now = new Date();
-    document.getElementById('last-updated').textContent =
-      `Updated ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+    // Fetch the scrape timestamp from meta file
+    try {
+      const metaRes = await fetch(`data/${regatta}/${year}_meta.json`);
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        window._lastScraped = meta.scraped; // store for status pill
+      }
+    } catch(e) { window._lastScraped = null; }
 
     renderChart();
 
@@ -905,8 +910,12 @@ function updateStatusPill() {
   const dotEl   = document.querySelector('.meta-pill .dot');
 
   if (status === 'live') {
-    const timeStr = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    pill.textContent = `Live — last updated ${timeStr}`;
+    let timeStr = '—';
+    if (window._lastScraped) {
+      const d = new Date(window._lastScraped);
+      timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }
+    pill.textContent = `Live — last scraped ${timeStr}`;
     if (dotEl) { dotEl.style.background = '#4fc3f7'; dotEl.style.display = ''; }
   } else if (status === 'upcoming') {
     const next    = getNextRaceDate(regatta);
@@ -915,7 +924,13 @@ function updateStatusPill() {
     pill.textContent = `Upcoming${dateStr ? ' — ' + dateStr : ''}`;
     if (dotEl) { dotEl.style.background = '#e8b84b'; dotEl.style.display = ''; }
   } else {
-    pill.textContent = 'Historic data';
+    if (window._lastScraped) {
+      const d = new Date(window._lastScraped);
+      const dateStr = d.toLocaleDateString([], {day:'numeric', month:'short', year:'numeric'});
+      pill.textContent = `Historic data — scraped ${dateStr}`;
+    } else {
+      pill.textContent = 'Historic data';
+    }
     if (dotEl) dotEl.style.display = 'none';
   }
 }
