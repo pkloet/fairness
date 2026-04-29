@@ -379,6 +379,16 @@
     vertical-align: middle;
   }
 
+  /* significance stars */
+  .sig-badge {
+    font-size: 11px;
+    color: var(--gold);
+    margin-left: 4px;
+    vertical-align: middle;
+    cursor: help;
+    letter-spacing: 0;
+  }
+
   /* No-data lane */
   .no-data-bar {
     font-size: 11px;
@@ -611,33 +621,33 @@ async function loadData() {
   document.getElementById('last-updated').textContent = 'Loading…';
 
   try {
-    const [satRes, sunRes] = await Promise.allSettled([
-      fetch(`data/${regatta}/${year}_sat.json`),
-      fetch(`data/${regatta}/${year}_sun.json`)
+    // Fetch pre-computed model results + meta timestamp (all in parallel)
+    const [satRes, sunRes, metaRes] = await Promise.allSettled([
+      fetch(`data/${regatta}/${year}_sat_results.json`),
+      fetch(`data/${regatta}/${year}_sun_results.json`),
+      fetch(`data/${regatta}/${year}_meta.json`),
     ]);
 
     const satOk = satRes.status === 'fulfilled' && satRes.value.ok;
     const sunOk = sunRes.status === 'fulfilled' && sunRes.value.ok;
 
-    rawData.sat = satOk ? await satRes.value.json() : [];
-    rawData.sun = sunOk ? await sunRes.value.json() : [];
+    rawData.sat = satOk ? await satRes.value.json() : null;
+    rawData.sun = sunOk ? await sunRes.value.json() : null;
 
     if (!satOk && !sunOk) {
       document.getElementById('lane-chart').innerHTML =
-        '<div class="state-box"><p>No data file found for this regatta and year.</p></div>';
+        '<div class="state-box"><p>No results found for this regatta and year yet.</p></div>';
       document.getElementById('last-updated').textContent = 'No data';
       updateStats(null, 0);
       return;
     }
 
-    // Fetch the scrape timestamp from meta file
-    try {
-      const metaRes = await fetch(`data/${regatta}/${year}_meta.json`);
-      if (metaRes.ok) {
-        const meta = await metaRes.json();
-        window._lastScraped = meta.scraped; // store for status pill
-      }
-    } catch(e) { window._lastScraped = null; }
+    // Scrape timestamp
+    window._lastScraped = null;
+    if (metaRes.status === 'fulfilled' && metaRes.value.ok) {
+      const meta = await metaRes.value.json();
+      window._lastScraped = meta.scraped;
+    }
 
     renderChart();
 
@@ -649,89 +659,64 @@ async function loadData() {
   }
 }
 
-// ─── Fairness computation ─────────────────────────────────────────────────────
-function computeFairness(races) {
-  if (!races || races.length === 0) return null;
+// ─── Render chart from pre-computed model results ─────────────────────────────
+// rawData.sat / rawData.sun are now result objects from analyse.py, not raw races.
+// Structure: { n_races, lanes: { "1": {effect, se, n, p, sig}, ... },
+//              p_overall, sig_overall, reference_lane, model }
 
-  const nLanes = 8;
-
-  // Row-normalise: subtract each race's own mean (ignoring nulls)
-  const normalised = races.map(row => {
-    const valid = row.filter(v => v !== null && v !== undefined && !isNaN(v));
-    if (valid.length === 0) return row.map(() => null);
-    const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
-    return row.map(v => (v !== null && v !== undefined && !isNaN(v)) ? v - mean : null);
-  });
-
-  // Column stats
-  const colData = Array.from({length: nLanes}, (_, i) =>
-    normalised.map(r => r[i]).filter(v => v !== null && v !== undefined && !isNaN(v))
-  );
-
-  const n     = colData.map(col => col.length);
-  const means = colData.map((col, i) =>
-    n[i] >= MIN_N ? col.reduce((a, b) => a + b, 0) / n[i] : null
-  );
-  const stds  = colData.map((col, i) => {
-    if (n[i] < MIN_N) return null;
-    const m = means[i];
-    return Math.sqrt(col.reduce((a, b) => a + (b - m) ** 2, 0) / (n[i] - 1));
-  });
-  const se = stds.map((s, i) => s !== null ? s / Math.sqrt(n[i]) : null);
-
-  // Reference: minimum mean across lanes that meet MIN_N
-  const validMeans = means.filter(m => m !== null);
-  if (validMeans.length === 0) return null;
-  const minMean = Math.min(...validMeans);
-
-  // Disadvantage: 0 for the fastest qualifying lane, positive = slower
-  const disadvantage = means.map(m => m !== null ? m - minMean : null);
-
-  return { means: disadvantage, se, n };
-}
-
-// ─── Render chart ─────────────────────────────────────────────────────────────
 function renderChart() {
-  let races;
-  races = currentDay === 'sat' ? rawData.sat : rawData.sun;
+  const result = currentDay === 'sat' ? rawData.sat : rawData.sun;
+  const chart  = document.getElementById('lane-chart');
 
-  const chart = document.getElementById('lane-chart');
-
-  if (!races || races.length === 0) {
-    chart.innerHTML = '<div class="state-box"><p>No race data available for this day.</p></div>';
-    updateStats(null, 0);
-    return;
-  }
-
-  const result = computeFairness(races);
   if (!result) {
-    chart.innerHTML = '<div class="state-box"><p>Not enough data to compute fairness.</p></div>';
+    chart.innerHTML = '<div class="state-box"><p>No data available for this day.</p></div>';
     updateStats(null, 0);
     return;
   }
 
-  const { means, se, n } = result;
+  const lanes    = result.lanes || {};
+  const nRaces   = result.n_races || 0;
+  const bestLane = result.reference_lane || null; // 1-based
 
-  // Best lane = lane with disadvantage = 0 (and enough data)
-  let bestLane = -1;
-  means.forEach((m, i) => { if (m !== null && m === 0) bestLane = i; });
+  // Chart scale
+  const allEffects = Object.values(lanes).map(l => (l.effect || 0) + (l.se || 0));
+  const chartMax   = Math.max(...allEffects, 0.5) * 1.25;
 
-  // Chart scale: based only on lanes with enough data
-  const validPairs = means.map((m, i) => m !== null ? m + (se[i] || 0) : 0);
-  const chartMax = Math.max(...validPairs) * 1.25 || 1;
+  // Overall significance banner
+  let overallHtml = '';
+  if (result.p_overall !== null && result.p_overall !== undefined) {
+    const pStr  = result.p_overall < 0.001 ? 'p < 0.001' : `p = ${result.p_overall.toFixed(3)}`;
+    const color = result.sig_overall ? '#4fc3f7' : 'rgba(255,255,255,0.3)';
+    const msg   = result.sig_overall
+      ? `Lane differences are statistically significant (${pStr})`
+      : `Lane differences are not statistically significant (${pStr})`;
+    overallHtml = `<div style="font-size:12px;color:${color};margin-bottom:1rem;
+      padding:6px 10px;border-left:2px solid ${color};opacity:0.85">${msg}</div>`;
+  }
 
-  let html = '';
-  for (let i = 0; i < 8; i++) {
-    const m   = means[i];
-    const s   = se[i];
-    const cnt = n[i];
-    const isBest = (i === bestLane);
-    const delay  = i * 0.05;
+  let html = overallHtml;
+  for (let i = 1; i <= 8; i++) {
+    const info    = lanes[String(i)];
+    const isBest  = (i === bestLane);
+    const delay   = (i - 1) * 0.05;
 
-    // Three states: enough data, some data but not enough, no data at all
-    const hasEnough = m !== null;           // means[i] is null when n < MIN_N
-    const hasSome   = !hasEnough && cnt > 0;
-    const hasNone   = cnt === 0;
+    if (!info) {
+      // Lane not in model at all — no data
+      html += `
+      <div class="lane-row" style="animation-delay:${delay}s">
+        <div class="lane-label">${i}</div>
+        <div class="bar-track"><div class="zero-line" style="left:0%"></div>
+          <div class="no-data-bar">no data</div></div>
+        <div class="time-value">—</div>
+      </div>`;
+      continue;
+    }
+
+    const hasEnough = info.n >= MIN_N;
+    const m  = info.effect;
+    const s  = info.se;
+    const p  = info.p;
+    const sig = info.sig || '';
 
     const laneClass = isBest ? ' best' : '';
     const fillClass = isBest ? ' best-lane' : '';
@@ -741,29 +726,28 @@ function renderChart() {
     const errR   = hasEnough && s ? Math.min(100, (m + s) / chartMax * 100) : barPct;
 
     const valStr  = hasEnough ? (m >= 0 ? '+' : '') + m.toFixed(2) + 's' : '—';
-    const nBadge  = cnt > 0 ? `<span class="n-badge">n=${cnt}</span>` : '';
+    const nBadge  = `<span class="n-badge">n=${info.n}</span>`;
+    const sigBadge = sig ? `<span class="sig-badge" title="p=${p.toFixed(3)}">${sig}</span>` : '';
 
     let barContent;
     if (hasEnough) {
       barContent = `
         <div class="bar-fill${fillClass}" style="left:0%;width:${barPct.toFixed(2)}%"></div>
-        <div class="bar-err" style="left:${errL.toFixed(2)}%;width:${(errR - errL).toFixed(2)}%"></div>
+        <div class="bar-err" style="left:${errL.toFixed(2)}%;width:${(errR-errL).toFixed(2)}%"></div>
         <div class="boat-icon" style="left:calc(${barPct.toFixed(2)}% + 2px)">🚣</div>`;
-    } else if (hasSome) {
-      barContent = `<div class="no-data-bar">not enough data (n=${cnt}, need ${MIN_N})</div>`;
     } else {
-      barContent = `<div class="no-data-bar">no data</div>`;
+      barContent = `<div class="no-data-bar">not enough data (n=${info.n}, need ${MIN_N})</div>`;
     }
 
     html += `
     <div class="lane-row" style="animation-delay:${delay}s">
-      <div class="lane-label${laneClass}">${i + 1}</div>
+      <div class="lane-label${laneClass}">${i}</div>
       <div class="bar-track">
         <div class="zero-line" style="left:0%"></div>
         ${barContent}
       </div>
       <div class="time-value${laneClass}">
-        ${valStr}${nBadge}<br>
+        ${valStr}${nBadge}${sigBadge}<br>
         <span class="se">${hasEnough && s ? '±' + s.toFixed(2) + 's se' : ''}</span>
       </div>
     </div>`;
@@ -771,10 +755,11 @@ function renderChart() {
 
   // X-axis ticks
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => t * chartMax);
-  html += `<div class="x-axis">${ticks.map(t => `<span class="x-tick">${t.toFixed(1)}s</span>`).join('')}</div>`;
+  html += `<div class="x-axis">${ticks.map(t =>
+    `<span class="x-tick">${t.toFixed(1)}s</span>`).join('')}</div>`;
 
   chart.innerHTML = html;
-  updateStats(result, races.length, bestLane, chartMax);
+  updateStats(result, nRaces, bestLane, chartMax);
 }
 
 function updateStats(result, nRaces, bestLane, maxAdv) {
@@ -785,10 +770,10 @@ function updateStats(result, nRaces, bestLane, maxAdv) {
     document.getElementById('s-lanes').textContent = '—';
     return;
   }
-  const lanesWithEnough = result.means.filter(m => m !== null).length;
-  document.getElementById('s-best').textContent  = bestLane >= 0 ? `Lane ${bestLane + 1}` : '—';
+  const lanesWithData = Object.values(result.lanes || {}).filter(l => l.n >= MIN_N).length;
+  document.getElementById('s-best').textContent  = bestLane ? `Lane ${bestLane}` : '—';
   document.getElementById('s-max').textContent   = maxAdv != null ? maxAdv.toFixed(2) + 's' : '—';
-  document.getElementById('s-lanes').textContent = lanesWithEnough + '/8';
+  document.getElementById('s-lanes').textContent = lanesWithData + '/8';
 }
 
 // ─── Schedule awareness ───────────────────────────────────────────────────────
