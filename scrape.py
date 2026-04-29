@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import datetime
+import subprocess
 import json
 import os
 import time
@@ -304,6 +305,15 @@ def run(regattas, years, force=False):
                 save_json(sat, sat_path)
                 save_json(sun, sun_path)
                 save_meta(regatta, year)
+                # Run statistical analysis immediately after scraping
+                print(f"  Running lane fairness analysis...")
+                subprocess.run(
+                    ["python", "analyse.py",
+                     "--regatta", regatta,
+                     "--year", str(year),
+                     "--force"],
+                    check=False
+                )
                 total_saved += 1
             else:
                 print(f"  → No usable race data found")
