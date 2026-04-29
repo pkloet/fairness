@@ -145,21 +145,23 @@ jobs:
       - name: Run scraper (race days only)
         if: steps.check.outputs.race_day == 'true'
         run: |
-          CMD="python scrape.py --since $(date +%Y) --force"
-
+          # If manually triggered with a specific regatta/year, use those
           if [ -n "${{ github.event.inputs.regatta }}" ]; then
-            CMD="$CMD --regatta ${{ github.event.inputs.regatta }}"
-          fi
-
-          if [ -n "${{ github.event.inputs.year }}" ]; then
-            CMD="python scrape.py --year ${{ github.event.inputs.year }} --force"
-            if [ -n "${{ github.event.inputs.regatta }}" ]; then
-              CMD="$CMD --regatta ${{ github.event.inputs.regatta }}"
+            YEAR="${{ github.event.inputs.year }}"
+            YEAR="${YEAR:-$(date +%Y)}"
+            python scrape.py --regatta ${{ github.event.inputs.regatta }} --year $YEAR --force
+          else
+            # Automatic: only scrape the regatta(s) racing today
+            REGATTAS=$(python today_regatta.py)
+            if [ -z "$REGATTAS" ]; then
+              echo "No regatta found for today, skipping."
+              exit 0
             fi
+            for REGATTA in $REGATTAS; do
+              echo "Scraping live regatta: $REGATTA"
+              python scrape.py --regatta $REGATTA --year $(date +%Y) --force
+            done
           fi
-
-          echo "Running: $CMD"
-          $CMD
 
       - name: Commit new data
         if: steps.check.outputs.race_day == 'true'
