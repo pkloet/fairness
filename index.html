@@ -201,6 +201,7 @@
     height: 36px;
     border-radius: 4px;
     overflow: visible;
+    margin-left: 12px; /* room for left-extending error bars */
   }
 
   /* The zero-reference line */
@@ -752,7 +753,8 @@ function renderChart() {
     const fillClass = isBest ? ' best-lane' : '';
 
     const barPct = hasEnough ? Math.max(0, m / chartMax * 100) : 0;
-    const errL   = hasEnough && s ? Math.max(0, (m - s) / chartMax * 100) : barPct;
+    // Allow error bars to extend left of zero (important for fastest lane)
+    const errL   = hasEnough && s ? (m - s) / chartMax * 100 : barPct;
     const errR   = hasEnough && s ? Math.min(100, (m + s) / chartMax * 100) : barPct;
 
     const valStr  = hasEnough ? (m >= 0 ? '+' : '') + m.toFixed(2) + 's' : '—';
