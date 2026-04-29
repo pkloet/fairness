@@ -15,11 +15,11 @@ Usage:
 """
 
 import argparse
+import datetime
 import json
 import os
 import time
 import requests
-import datetime
 from bs4 import BeautifulSoup
 
 # ─── Config ──────────────────────────────────────────────────────────────────
@@ -36,10 +36,10 @@ REGATTAS = [
     "diyr",
 ]
 
-FIRST_YEAR = 2014          # earliest year to try
-CURRENT_YEAR = datetime.date.today().year
+FIRST_YEAR = 2010          # earliest year to try
+CURRENT_YEAR = 2025        # last year to try
 
-REQUEST_DELAY = 0.1        # seconds between HTTP requests (be polite to the server)
+REQUEST_DELAY = 0.3        # seconds between HTTP requests (be polite to the server)
 REQUEST_TIMEOUT = 15       # seconds before giving up on a request
 
 OUTPUT_DIR = "data"
@@ -61,10 +61,9 @@ def race_url(regatta, year, href):
 
 def fetch(url):
     """GET a URL and return the response, or None on failure."""
-    print("Fetch" + url)
     try:
         time.sleep(REQUEST_DELAY)
-        resp = requests.get(url, timeout=(5, REQUEST_TIMEOUT))
+        resp = requests.get(url, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             return resp
         print(f"  [HTTP {resp.status_code}] {url}")
@@ -257,6 +256,14 @@ def save_json(data, path):
     print(f"  Saved {len(data)} races → {path}")
 
 
+def save_meta(regatta, year):
+    """Save a small metadata file with the scrape timestamp."""
+    meta_path = os.path.join(OUTPUT_DIR, regatta, f"{year}_meta.json")
+    os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+    with open(meta_path, "w") as f:
+        json.dump({"scraped": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}, f)
+
+
 def load_json(path):
     if os.path.exists(path):
         with open(path) as f:
@@ -296,6 +303,7 @@ def run(regattas, years, force=False):
             if sat or sun:   # save even if one day is empty
                 save_json(sat, sat_path)
                 save_json(sun, sun_path)
+                save_meta(regatta, year)
                 total_saved += 1
             else:
                 print(f"  → No usable race data found")
