@@ -545,21 +545,31 @@
     A narrow bar means many races contributed; a wide bar means few races and more uncertainty.
     <br><br>
     <strong style="color:var(--text-primary)">Significance symbols</strong><br><br>
-    The symbols next to each lane test whether its disadvantage is distinguishable from zero
-    given the noise in the data:
-    <br>
+    The symbols next to each lane answer the question:
+    <em>"Is this lane significantly slower than the fastest lane?"</em>
+    Specifically, for each lane j the test is:
+    <br><br>
+    <span style="font-family:monospace;font-size:12px;color:var(--accent)">
+    H₀: effect(lane j) − effect(fastest lane) = 0</span>
+    <br><br>
+    The test statistic uses the full covariance matrix from the model, so the
+    uncertainty of both the lane estimate <em>and</em> the fastest lane estimate are
+    accounted for. The fastest lane always gets p = 1 by definition.
+    <br><br>
     <span style="color:var(--gold)">†</span>&nbsp; p &lt; 0.10 — borderline, treat with caution<br>
     <span style="color:var(--gold)">*</span>&nbsp; p &lt; 0.05 — significant by the standard threshold<br>
     <span style="color:var(--gold)">**</span>&nbsp; p &lt; 0.01 — strong evidence<br>
     <span style="color:var(--gold)">***</span>&nbsp; p &lt; 0.001 — very strong evidence<br>
     <br>
-    The banner above the chart shows an overall test: whether <em>any</em> lane differences exist
-    at all, using a likelihood ratio test comparing a model with lane effects to one without.
+    The banner above the chart shows a separate overall test: whether <em>any</em> lane
+    differences exist at all, using a likelihood ratio test comparing a model with lane
+    effects to one without (χ² test, df = number of lanes − 1).
     <br><br>
     <strong style="color:var(--text-primary)">Important caveat</strong><br><br>
     A significant result means the effect is <em>detectable</em>, not necessarily large.
     With many races even a small difference becomes significant. Always read the effect size
-    in seconds alongside the p-value.
+    in seconds alongside the p-value. Conversely, on a day with few races a real disadvantage
+    may not reach significance — absence of evidence is not evidence of absence.
   </div>
 
 </div>
