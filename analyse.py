@@ -57,7 +57,7 @@ N_LANES    = 8
 
 REGATTAS = [
     "bvr", "voorjaarsregatta", "hollandia", "raceroei",
-    "arb", "westelijke", "hollandbeker", "nsrf", "diyr",
+    "arb", "westelijke", "hollandbeker", "nsrf", "diyr","zrb","zuidelijke-regatta",
 ]
 
 # Significance stars (two-tailed)
