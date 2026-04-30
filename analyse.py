@@ -174,23 +174,38 @@ def fit_lmm(df):
     var_alpha = np.array([contrasts[i] @ V_beta @ contrasts[i] for i in range(k)])
     se_alpha  = np.sqrt(np.maximum(var_alpha, 0))
 
-    # t-statistic and p-value for each lane vs grand mean
-    t_stats = alpha / np.where(se_alpha > 0, se_alpha, np.nan)
-    # Use normal approximation (large sample) for p-values
-    pvals   = 2 * stats.norm.sf(np.abs(t_stats))
-
     # ── Shift so fastest lane = 0 ────────────────────────────────────────────
-    min_alpha    = alpha.min()
-    fastest_idx  = int(np.argmin(alpha))
-    fastest_lane = valid_lanes[fastest_idx]
+    min_alpha        = alpha.min()
+    fastest_idx      = int(np.argmin(alpha))
+    fastest_lane     = valid_lanes[fastest_idx]
     fastest_lane_num = int(fastest_lane[1:])
+
+    # Full covariance matrix of lane effects: V_alpha = C @ V_beta @ C^T
+    V_alpha = contrasts @ V_beta @ contrasts.T   # shape (k, k)
+
+    # ── Per-lane p-value vs fastest lane ────────────────────────────────────
+    # For each lane j, test H0: alpha_j - alpha_fastest = 0
+    # Var(alpha_j - alpha_f) = Var(alpha_j) + Var(alpha_f) - 2*Cov(alpha_j, alpha_f)
+    # The fastest lane itself gets p=1 by definition.
+    f = fastest_idx
+    pvals = np.ones(k)
+    for i in range(k):
+        if i == f:
+            continue
+        diff    = alpha[i] - alpha[f]
+        var_diff = V_alpha[i, i] + V_alpha[f, f] - 2 * V_alpha[i, f]
+        if var_diff > 0:
+            t_stat  = diff / np.sqrt(var_diff)
+            pvals[i] = float(2 * stats.norm.sf(abs(t_stat)))
+        else:
+            pvals[i] = 1.0
 
     lanes_out = {}
     for i, lane in enumerate(valid_lanes):
         lane_num = int(lane[1:])
         lanes_out[str(lane_num)] = {
             "effect": round(float(alpha[i] - min_alpha), 4),
-            "se":     round(float(se_alpha[i]), 4),
+            "se":     round(float(np.sqrt(V_alpha[i, i])), 4),
             "n":      int(n_per_lane.get(lane, 0)),
             "p":      round(float(pvals[i]), 4),
             "sig":    sig_stars(float(pvals[i])),
