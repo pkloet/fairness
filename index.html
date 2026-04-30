@@ -496,6 +496,8 @@
       <option value="voorjaarsregatta">Voorjaarsregatta</option>
       <option value="westelijke">Westelijke</option>
       <option value="nsrf">NSRF</option>
+      <option value="zrb">ZRB</option>
+      <option value="zuidelijke-regatta">Zuidelijke Regatta</option>
     </select>
     <select id="year-select" aria-label="Select year"></select>
     <button class="btn-refresh" onclick="loadData()">
@@ -857,6 +859,8 @@ const REGATTA_DISPLAY = {
   bvr:              'BvR',
   nsrf:             'NSRF',
   diyr:             'DIYR',
+  zrb:                  'ZRB',
+  'zuidelijke-regatta': 'Zuidelijke Regatta',
 };
 
 async function loadSchedule() {
@@ -965,7 +969,7 @@ function updateStatusPill() {
       const d = new Date(window._lastScraped);
       timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     }
-    pill.textContent = `Live — last scraped ${timeStr}`;
+    pill.textContent = `Live — ${timeStr}`;
     if (dotEl) { dotEl.style.background = '#4fc3f7'; dotEl.style.display = ''; }
   } else if (status === 'upcoming') {
     const next    = getNextRaceDate(regatta);
@@ -977,7 +981,7 @@ function updateStatusPill() {
     if (window._lastScraped) {
       const d = new Date(window._lastScraped);
       const dateStr = d.toLocaleDateString([], {day:'numeric', month:'short', year:'numeric'});
-      pill.textContent = `Historic data — scraped ${dateStr}`;
+      pill.textContent = `Historic data`;
     } else {
       pill.textContent = 'Historic data';
     }
