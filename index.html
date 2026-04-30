@@ -981,7 +981,7 @@ function updateStatusPill() {
     if (window._lastScraped) {
       const d = new Date(window._lastScraped);
       const dateStr = d.toLocaleDateString([], {day:'numeric', month:'short', year:'numeric'});
-      pill.textContent = `Historic data — ${dateStr}`;
+      pill.textContent = `Historic data`;
     } else {
       pill.textContent = 'Historic data';
     }
