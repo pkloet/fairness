@@ -200,8 +200,7 @@
     position: relative;
     height: 36px;
     border-radius: 4px;
-    overflow: visible;
-    margin-left: 12px; /* room for left-extending error bars */
+    overflow: hidden; /* clip to track boundaries */
   }
 
   /* The zero-reference line */
@@ -735,6 +734,18 @@ function renderChart() {
       padding:6px 10px;border-left:2px solid ${color};opacity:0.85">${msg}</div>`;
   }
 
+  // Zero offset: how far from the left edge (as % of track) the zero line sits.
+  // We reserve this fraction for left-extending error bars (e.g. fastest lane).
+  // Set to the largest left-overhang any lane needs, capped at 15%.
+  const maxLeftOverhang = Math.max(
+    0,
+    ...Object.values(lanes).map(l => l.se ? (l.se - l.effect) / chartMax * 100 : 0)
+  );
+  const ZERO_OFFSET = Math.min(15, Math.max(5, maxLeftOverhang + 2)); // % of track width
+
+  // usable width to the right of zero = (100 - ZERO_OFFSET)%
+  const rightFrac = (100 - ZERO_OFFSET) / 100;
+
   let html = overallHtml;
   for (let i = 1; i <= 8; i++) {
     const info    = lanes[String(i)];
@@ -742,41 +753,50 @@ function renderChart() {
     const delay   = (i - 1) * 0.05;
 
     if (!info) {
-      // Lane not in model at all — no data
       html += `
       <div class="lane-row" style="animation-delay:${delay}s">
         <div class="lane-label">${i}</div>
-        <div class="bar-track"><div class="zero-line" style="left:0%"></div>
-          <div class="no-data-bar">no data</div></div>
+        <div class="bar-track">
+          <div class="zero-line" style="left:${ZERO_OFFSET.toFixed(1)}%"></div>
+          <div class="no-data-bar">no data</div>
+        </div>
         <div class="time-value">—</div>
       </div>`;
       continue;
     }
 
     const hasEnough = info.n >= MIN_N;
-    const m  = info.effect;
-    const s  = info.se;
-    const p  = info.p;
+    const m   = info.effect;
+    const s   = info.se;
+    const p   = info.p;
     const sig = info.sig || '';
 
     const laneClass = isBest ? ' best' : '';
     const fillClass = isBest ? ' best-lane' : '';
 
-    const barPct = hasEnough ? Math.max(0, m / chartMax * 100) : 0;
-    // Allow error bars to extend left of zero (important for fastest lane)
-    const errL   = hasEnough && s ? (m - s) / chartMax * 100 : barPct;
-    const errR   = hasEnough && s ? Math.min(100, (m + s) / chartMax * 100) : barPct;
+    // Convert seconds → % of track width, anchored at ZERO_OFFSET
+    const toTrackPct = val => ZERO_OFFSET + val / chartMax * 100 * rightFrac;
 
-    const valStr  = hasEnough ? (m >= 0 ? '+' : '') + m.toFixed(2) + 's' : '—';
-    const nBadge  = `<span class="n-badge">n=${info.n}</span>`;
+    const barLeft  = ZERO_OFFSET;                                    // bar always starts at zero
+    const barRight = hasEnough ? toTrackPct(m) : ZERO_OFFSET;       // bar ends at effect
+    const barWidth = Math.max(0, barRight - barLeft);
+
+    const errLeft  = hasEnough && s ? toTrackPct(m - s) : barRight;
+    const errRight = hasEnough && s ? Math.min(100, toTrackPct(m + s)) : barRight;
+    const errWidth = Math.max(0, errRight - errLeft);
+
+    const boatPos  = barRight; // boat sits at right edge of bar
+
+    const valStr   = hasEnough ? '+' + m.toFixed(2) + 's' : '—';
+    const nBadge   = `<span class="n-badge">n=${info.n}</span>`;
     const sigBadge = sig ? `<span class="sig-badge" title="p=${p.toFixed(3)}">${sig}</span>` : '';
 
     let barContent;
     if (hasEnough) {
       barContent = `
-        <div class="bar-fill${fillClass}" style="left:0%;width:${barPct.toFixed(2)}%"></div>
-        <div class="bar-err" style="left:${errL.toFixed(2)}%;width:${(errR-errL).toFixed(2)}%"></div>
-        <div class="boat-icon" style="left:calc(${barPct.toFixed(2)}% + 2px)">🚣</div>`;
+        <div class="bar-fill${fillClass}" style="left:${barLeft.toFixed(2)}%;width:${barWidth.toFixed(2)}%"></div>
+        <div class="bar-err" style="left:${errLeft.toFixed(2)}%;width:${errWidth.toFixed(2)}%"></div>
+        <div class="boat-icon" style="left:calc(${boatPos.toFixed(2)}% + 2px)">🚣</div>`;
     } else {
       barContent = `<div class="no-data-bar">not enough data (n=${info.n}, need ${MIN_N})</div>`;
     }
@@ -785,7 +805,7 @@ function renderChart() {
     <div class="lane-row" style="animation-delay:${delay}s">
       <div class="lane-label${laneClass}">${i}</div>
       <div class="bar-track">
-        <div class="zero-line" style="left:0%"></div>
+        <div class="zero-line" style="left:${ZERO_OFFSET.toFixed(1)}%"></div>
         ${barContent}
       </div>
       <div class="time-value${laneClass}">
@@ -795,10 +815,14 @@ function renderChart() {
     </div>`;
   }
 
-  // X-axis ticks
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => t * chartMax);
-  html += `<div class="x-axis">${ticks.map(t =>
-    `<span class="x-tick">${t.toFixed(1)}s</span>`).join('')}</div>`;
+  // X-axis ticks — must align with the offset zero line
+  // Tick at 0s sits at ZERO_OFFSET%, ticks to the right scale with rightFrac
+  const tickVals = [0, 0.25, 0.5, 0.75, 1.0].map(t => t * chartMax);
+  const tickHtml = tickVals.map((t, idx) => {
+    const pct = toTrackPct ? ZERO_OFFSET + t / chartMax * 100 * rightFrac : idx * 20;
+    return `<span class="x-tick" style="position:absolute;left:${(ZERO_OFFSET + t/chartMax*100*rightFrac).toFixed(1)}%;transform:translateX(-50%)">${t.toFixed(1)}s</span>`;
+  }).join('');
+  html += `<div class="x-axis" style="position:relative;height:20px;margin-top:6px;border-top:1px solid rgba(255,255,255,0.08)">${tickHtml}</div>`;
 
   chart.innerHTML = html;
   updateStats(result, nRaces, bestLane, chartMax);
