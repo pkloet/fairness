@@ -39,17 +39,22 @@ OUTPUT_PATH  = "data/schedule.json"
 # Map keywords in regatta names (lowercase) → our internal regatta codes.
 # Order matters: more specific patterns first.
 REGATTA_NAME_MAP = {
-    "arb bosbaanwedstrijden":   "arb",
-    "arb":                      "arb",
-    "westelijke":               "westelijke",
-    "hollandia":                "hollandia",
-    "raceroei":                 "raceroei",
-    "holland beker":            "hollandbeker",
-    "hollandbeker":             "hollandbeker",
-    "voorjaarsregatta":         "voorjaarsregatta",
-    "bvr":                      "bvr",
-    "nsrf":                     "nsrf",
-    "diyr":                     "diyr",
+    "arb bosbaanwedstrijden":    "arb",
+    "arb":                       "arb",
+    "westelijke":                "westelijke",
+    "hollandia":                 "hollandia",
+    "raceroei":                  "raceroei",
+    "koninklijke- holland beker": "hollandbeker",
+    "holland beker":             "hollandbeker",
+    "hollandbeker":              "hollandbeker",
+    "voorjaarsregatta":          "voorjaarsregatta",
+    "bvr":                       "bvr",
+    "nsrf":                      "nsrf",
+    "dutch international youth": "diyr",
+    "diyr":                      "diyr",
+    "zuidelijke regatta":        "zuidelijke-regatta",  # ← fix
+    "zuidelijke":                "zuidelijke-regatta",  # ← fix
+    "zrb":                       "zrb",
 }
 
 MONTH_MAP = {
