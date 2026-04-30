@@ -35,6 +35,8 @@ REGATTAS = [
     "hollandbeker",
     "nsrf",
     "diyr",
+    "zrb",
+    "zuidelijke-regatta",
 ]
 
 FIRST_YEAR = 2010          # earliest year to try
