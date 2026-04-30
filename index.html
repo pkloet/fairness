@@ -969,7 +969,7 @@ function updateStatusPill() {
       const d = new Date(window._lastScraped);
       timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     }
-    pill.textContent = `Live — last scraped ${timeStr}`;
+    pill.textContent = `Live — ${timeStr}`;
     if (dotEl) { dotEl.style.background = '#4fc3f7'; dotEl.style.display = ''; }
   } else if (status === 'upcoming') {
     const next    = getNextRaceDate(regatta);
@@ -981,7 +981,7 @@ function updateStatusPill() {
     if (window._lastScraped) {
       const d = new Date(window._lastScraped);
       const dateStr = d.toLocaleDateString([], {day:'numeric', month:'short', year:'numeric'});
-      pill.textContent = `Historic data — scraped ${dateStr}`;
+      pill.textContent = `Historic data — ${dateStr}`;
     } else {
       pill.textContent = 'Historic data';
     }
