@@ -815,12 +815,11 @@ function renderChart() {
     </div>`;
   }
 
-  // X-axis ticks — must align with the offset zero line
-  // Tick at 0s sits at ZERO_OFFSET%, ticks to the right scale with rightFrac
+  // X-axis ticks — aligned with the offset zero line
   const tickVals = [0, 0.25, 0.5, 0.75, 1.0].map(t => t * chartMax);
-  const tickHtml = tickVals.map((t, idx) => {
-    const pct = toTrackPct ? ZERO_OFFSET + t / chartMax * 100 * rightFrac : idx * 20;
-    return `<span class="x-tick" style="position:absolute;left:${(ZERO_OFFSET + t/chartMax*100*rightFrac).toFixed(1)}%;transform:translateX(-50%)">${t.toFixed(1)}s</span>`;
+  const tickHtml = tickVals.map(t => {
+    const pct = (ZERO_OFFSET + t / chartMax * 100 * rightFrac).toFixed(1);
+    return `<span class="x-tick" style="position:absolute;left:${pct}%;transform:translateX(-50%)">${t.toFixed(1)}s</span>`;
   }).join('');
   html += `<div class="x-axis" style="position:relative;height:20px;margin-top:6px;border-top:1px solid rgba(255,255,255,0.08)">${tickHtml}</div>`;
 
