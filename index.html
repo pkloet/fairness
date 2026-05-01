@@ -492,14 +492,10 @@
       <option value="raceroei">Raceroei</option>
       <option value="arb">ARB</option>
       <option value="hollandia">Hollandia</option>
-      <option value="hollandbeker">Holland Beker</option>
       <option value="bvr">BvR</option>
       <option value="voorjaarsregatta">Voorjaarsregatta</option>
       <option value="westelijke">Westelijke</option>
       <option value="nsrf">NSRF</option>
-      <option value="diyr">DIYR</option>
-      <option value="zrb">ZRB</option>
-      <option value="zuidelijke-regatta">Zuidelijke Regatta</option>
     </select>
     <select id="year-select" aria-label="Select year"></select>
     <button class="btn-refresh" onclick="loadData()">
@@ -517,7 +513,7 @@
     <div class="stat-card"><div class="stat-label">Races analysed</div><div class="stat-value" id="s-races">—</div></div>
     <div class="stat-card"><div class="stat-label">Fastest lane</div><div class="stat-value highlight" id="s-best">—</div></div>
     <div class="stat-card"><div class="stat-label">Max advantage</div><div class="stat-value" id="s-max">—</div></div>
-    <div class="stat-card"><div class="stat-label">Lanes with data</div><div class="stat-value" id="s-lanes">—</div></div>
+    <div class="stat-card"><div class="stat-label">Lanes</div><div class="stat-value" id="s-lanes">—</div></div>
   </div>
 
   <div class="chart-section">
@@ -757,15 +753,7 @@ function renderChart() {
     const delay   = (i - 1) * 0.05;
 
     if (!info) {
-      html += `
-      <div class="lane-row" style="animation-delay:${delay}s">
-        <div class="lane-label">${i}</div>
-        <div class="bar-track">
-          <div class="zero-line" style="left:${ZERO_OFFSET.toFixed(1)}%"></div>
-          <div class="no-data-bar">no data</div>
-        </div>
-        <div class="time-value">—</div>
-      </div>`;
+      // Lane has no data at all — skip entirely
       continue;
     }
 
@@ -828,10 +816,18 @@ function renderChart() {
   html += `<div class="x-axis" style="position:relative;height:20px;margin-top:6px;border-top:1px solid rgba(255,255,255,0.08)">${tickHtml}</div>`;
 
   chart.innerHTML = html;
-  updateStats(result, nRaces, bestLane, chartMax);
+
+  // Max advantage = largest effect among lanes with enough data
+  const maxEffect = Math.max(
+    0,
+    ...Object.values(lanes)
+      .filter(l => l.n >= MIN_N)
+      .map(l => l.effect || 0)
+  );
+  updateStats(result, nRaces, bestLane, maxEffect);
 }
 
-function updateStats(result, nRaces, bestLane, maxAdv) {
+function updateStats(result, nRaces, bestLane, maxEffect) {
   document.getElementById('s-races').textContent = nRaces || '—';
   if (!result) {
     document.getElementById('s-best').textContent  = '—';
@@ -841,8 +837,8 @@ function updateStats(result, nRaces, bestLane, maxAdv) {
   }
   const lanesWithData = Object.values(result.lanes || {}).filter(l => l.n >= MIN_N).length;
   document.getElementById('s-best').textContent  = bestLane ? `Lane ${bestLane}` : '—';
-  document.getElementById('s-max').textContent   = maxAdv != null ? maxAdv.toFixed(2) + 's' : '—';
-  document.getElementById('s-lanes').textContent = lanesWithData + '/8';
+  document.getElementById('s-max').textContent   = maxEffect > 0 ? '+' + maxEffect.toFixed(2) + 's' : '0.00s';
+  document.getElementById('s-lanes').textContent = lanesWithData;
 }
 
 // ─── Schedule awareness ───────────────────────────────────────────────────────
@@ -861,8 +857,6 @@ const REGATTA_DISPLAY = {
   bvr:              'BvR',
   nsrf:             'NSRF',
   diyr:             'DIYR',
-  zrb:                  'ZRB',
-  'zuidelijke-regatta': 'Zuidelijke Regatta',
 };
 
 async function loadSchedule() {
@@ -971,7 +965,7 @@ function updateStatusPill() {
       const d = new Date(window._lastScraped);
       timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     }
-    pill.textContent = `Live — ${timeStr}`;
+    pill.textContent = `Live — last scraped ${timeStr}`;
     if (dotEl) { dotEl.style.background = '#4fc3f7'; dotEl.style.display = ''; }
   } else if (status === 'upcoming') {
     const next    = getNextRaceDate(regatta);
@@ -983,7 +977,7 @@ function updateStatusPill() {
     if (window._lastScraped) {
       const d = new Date(window._lastScraped);
       const dateStr = d.toLocaleDateString([], {day:'numeric', month:'short', year:'numeric'});
-      pill.textContent = `Historic data`;
+      pill.textContent = `Historic data — scraped ${dateStr}`;
     } else {
       pill.textContent = 'Historic data';
     }
@@ -1053,7 +1047,5 @@ document.getElementById('year-select').addEventListener('change', loadData);
   await onRegattaChange();
 })();
 </script>
-<script data-goatcounter="https://regatta-fairness.goatcounter.com/count"
-        async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
