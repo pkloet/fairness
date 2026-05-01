@@ -31,7 +31,6 @@
     overflow-x: hidden;
   }
 
-  /* Subtle water texture via layered gradients */
   body::before {
     content: '';
     position: fixed;
@@ -50,7 +49,6 @@
 
   .page { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
 
-  /* Header */
   header { margin-bottom: 2.5rem; }
   .eyebrow {
     font-family: 'Barlow Condensed', sans-serif;
@@ -98,7 +96,6 @@
     50% { opacity: 0.3; }
   }
 
-  /* Controls */
   .controls {
     display: flex;
     gap: 0.75rem;
@@ -153,7 +150,6 @@
   .tab.active { color: var(--gold); border-bottom-color: var(--gold); }
   .tab:hover:not(.active) { color: var(--text-primary); }
 
-  /* Chart area */
   .chart-section {
     background: rgba(255,255,255,0.025);
     border: 1px solid rgba(255,255,255,0.08);
@@ -170,7 +166,6 @@
     margin-bottom: 1.5rem;
   }
 
-  /* Lane chart */
   .lane-chart { width: 100%; }
 
   .lane-row {
@@ -200,10 +195,9 @@
     position: relative;
     height: 36px;
     border-radius: 4px;
-    overflow: hidden; /* clip to track boundaries */
+    overflow: hidden;
   }
 
-  /* The zero-reference line */
   .zero-line {
     position: absolute;
     top: 0; bottom: 0;
@@ -243,7 +237,6 @@
   .bar-err::before { left: 0; }
   .bar-err::after { right: 0; }
 
-  /* Boat icon */
   .boat-icon {
     position: absolute;
     top: 50%;
@@ -264,7 +257,6 @@
   .time-value.best { color: var(--gold); }
   .time-value .se { font-size: 12px; opacity: 0.6; }
 
-  /* X-axis */
   .x-axis {
     display: flex;
     justify-content: space-between;
@@ -278,7 +270,6 @@
     font-family: 'Barlow Condensed', sans-serif;
   }
 
-  /* Legend */
   .legend {
     display: flex;
     gap: 1.5rem;
@@ -311,7 +302,6 @@
   .legend-err::before { left: 0; }
   .legend-err::after { right: 0; }
 
-  /* Stats row */
   .stats-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -341,7 +331,6 @@
   }
   .stat-value.highlight { color: var(--gold); }
 
-  /* Loading / error */
   .state-box {
     text-align: center;
     padding: 4rem 2rem;
@@ -358,7 +347,6 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .state-box p { font-size: 15px; }
 
-  /* Explanation */
   .explain {
     border-left: 2px solid rgba(255,255,255,0.12);
     padding-left: 1rem;
@@ -369,7 +357,6 @@
   }
   .explain strong { font-weight: 600; }
 
-  /* n-races badge */
   .n-badge {
     font-size: 11px;
     background: rgba(255,255,255,0.07);
@@ -380,7 +367,6 @@
     vertical-align: middle;
   }
 
-  /* significance stars */
   .sig-badge {
     font-size: 13px;
     color: var(--gold);
@@ -390,7 +376,6 @@
     letter-spacing: 0;
   }
 
-  /* No-data lane */
   .no-data-bar {
     font-size: 12px;
     color: rgba(255,255,255,0.2);
@@ -401,8 +386,6 @@
     font-style: italic;
   }
 
-
-  /* Live regatta buttons */
   .live-buttons {
     display: none;
     gap: 0.75rem;
@@ -450,7 +433,6 @@
   }
   .btn-upcoming:hover { background: rgba(232,184,75,0.2); }
 
-  /* Upcoming banner shown in chart area */
   .upcoming-banner {
     text-align: center;
     padding: 3rem 2rem;
@@ -483,8 +465,6 @@
     </div>
   </header>
 
-
-  <!-- Live / upcoming regatta quick-jump buttons — shown/hidden by JS -->
   <div class="live-buttons" id="live-buttons"></div>
 
   <div class="controls">
@@ -492,10 +472,14 @@
       <option value="raceroei">Raceroei</option>
       <option value="arb">ARB</option>
       <option value="hollandia">Hollandia</option>
+      <option value="hollandbeker">Holland Beker</option>
       <option value="bvr">BvR</option>
       <option value="voorjaarsregatta">Voorjaarsregatta</option>
       <option value="westelijke">Westelijke</option>
       <option value="nsrf">NSRF</option>
+      <option value="diyr">DIYR</option>
+      <option value="zrb">ZRB</option>
+      <option value="zuidelijke-regatta">Zuidelijke Regatta</option>
     </select>
     <select id="year-select" aria-label="Select year"></select>
     <button class="btn-refresh" onclick="loadData()">
@@ -574,22 +558,17 @@
 </div>
 
 <script>
-const MIN_N = 3; // minimum races per lane for model to include lane
+const MIN_N = 3;
 
 let currentDay = 'sat';
-let rawData = { sat: [], sun: [] };
+let rawData = { sat: null, sun: null };
 
-// ─── Day tabs ────────────────────────────────────────────────────────────────
 function setDay(day, btn) {
   currentDay = day;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   renderChart();
 }
-
-// ─── Dynamic year selector ───────────────────────────────────────────────────
-// Probes which years actually have data for the selected regatta, then
-// populates the year dropdown with only those years.
 
 const FIRST_YEAR = 2010;
 const THIS_YEAR  = new Date().getFullYear();
@@ -599,12 +578,10 @@ async function populateYears(regatta) {
   const prevYear = yearSel.value;
   yearSel.innerHTML = '<option disabled>Checking…</option>';
 
-  // Probe all years in parallel — a HEAD request is enough to check existence
   const years = [];
   const probes = [];
   for (let y = THIS_YEAR; y >= FIRST_YEAR; y--) {
     years.push(y);
-    // Check sat file — if either sat or sun exists the year counts
     probes.push(
       fetch(`data/${regatta}/${y}_sat.json`, { method: 'HEAD' })
         .then(r => r.ok)
@@ -626,7 +603,6 @@ async function populateYears(regatta) {
     yearSel.appendChild(o);
   });
 
-  // Try to keep the previously selected year if it's still available
   if (availableYears.includes(Number(prevYear))) {
     yearSel.value = prevYear;
   }
@@ -634,7 +610,6 @@ async function populateYears(regatta) {
   return yearSel.value;
 }
 
-// ─── Load data ───────────────────────────────────────────────────────────────
 async function onRegattaChange() {
   const regatta = document.getElementById('regatta-select').value;
   document.getElementById('lane-chart').innerHTML =
@@ -661,7 +636,6 @@ async function loadData() {
   document.getElementById('last-updated').textContent = 'Loading…';
 
   try {
-    // Fetch pre-computed model results + meta timestamp (all in parallel)
     const [satRes, sunRes, metaRes] = await Promise.allSettled([
       fetch(`data/${regatta}/${year}_sat_results.json`),
       fetch(`data/${regatta}/${year}_sun_results.json`),
@@ -682,7 +656,6 @@ async function loadData() {
       return;
     }
 
-    // Scrape timestamp
     window._lastScraped = null;
     if (metaRes.status === 'fulfilled' && metaRes.value.ok) {
       const meta = await metaRes.value.json();
@@ -699,11 +672,6 @@ async function loadData() {
   }
 }
 
-// ─── Render chart from pre-computed model results ─────────────────────────────
-// rawData.sat / rawData.sun are now result objects from analyse.py, not raw races.
-// Structure: { n_races, lanes: { "1": {effect, se, n, p, sig}, ... },
-//              p_overall, sig_overall, reference_lane, model }
-
 function renderChart() {
   const result = currentDay === 'sat' ? rawData.sat : rawData.sun;
   const chart  = document.getElementById('lane-chart');
@@ -716,13 +684,11 @@ function renderChart() {
 
   const lanes    = result.lanes || {};
   const nRaces   = result.n_races || 0;
-  const bestLane = result.reference_lane || null; // 1-based
+  const bestLane = result.reference_lane || null;
 
-  // Chart scale
   const allEffects = Object.values(lanes).map(l => (l.effect || 0) + (l.se || 0));
   const chartMax   = Math.max(...allEffects, 0.5) * 1.25;
 
-  // Overall significance banner
   let overallHtml = '';
   if (result.p_overall !== null && result.p_overall !== undefined) {
     const pStr  = result.p_overall < 0.001 ? 'p < 0.001' : `p = ${result.p_overall.toFixed(3)}`;
@@ -734,16 +700,11 @@ function renderChart() {
       padding:6px 10px;border-left:2px solid ${color};opacity:0.85">${msg}</div>`;
   }
 
-  // Zero offset: how far from the left edge (as % of track) the zero line sits.
-  // We reserve this fraction for left-extending error bars (e.g. fastest lane).
-  // Set to the largest left-overhang any lane needs, capped at 15%.
   const maxLeftOverhang = Math.max(
     0,
     ...Object.values(lanes).map(l => l.se ? (l.se - l.effect) / chartMax * 100 : 0)
   );
-  const ZERO_OFFSET = Math.min(15, Math.max(5, maxLeftOverhang + 2)); // % of track width
-
-  // usable width to the right of zero = (100 - ZERO_OFFSET)%
+  const ZERO_OFFSET = Math.min(15, Math.max(5, maxLeftOverhang + 2));
   const rightFrac = (100 - ZERO_OFFSET) / 100;
 
   let html = overallHtml;
@@ -752,10 +713,8 @@ function renderChart() {
     const isBest  = (i === bestLane);
     const delay   = (i - 1) * 0.05;
 
-    if (!info) {
-      // Lane has no data at all — skip entirely
-      continue;
-    }
+    // Skip lanes with no data entirely
+    if (!info) continue;
 
     const hasEnough = info.n >= MIN_N;
     const m   = info.effect;
@@ -766,18 +725,17 @@ function renderChart() {
     const laneClass = isBest ? ' best' : '';
     const fillClass = isBest ? ' best-lane' : '';
 
-    // Convert seconds → % of track width, anchored at ZERO_OFFSET
     const toTrackPct = val => ZERO_OFFSET + val / chartMax * 100 * rightFrac;
 
-    const barLeft  = ZERO_OFFSET;                                    // bar always starts at zero
-    const barRight = hasEnough ? toTrackPct(m) : ZERO_OFFSET;       // bar ends at effect
+    const barLeft  = ZERO_OFFSET;
+    const barRight = hasEnough ? toTrackPct(m) : ZERO_OFFSET;
     const barWidth = Math.max(0, barRight - barLeft);
 
     const errLeft  = hasEnough && s ? toTrackPct(m - s) : barRight;
     const errRight = hasEnough && s ? Math.min(100, toTrackPct(m + s)) : barRight;
     const errWidth = Math.max(0, errRight - errLeft);
 
-    const boatPos  = barRight; // boat sits at right edge of bar
+    const boatPos  = barRight;
 
     const valStr   = hasEnough ? '+' + m.toFixed(2) + 's' : '—';
     const nBadge   = `<span class="n-badge">n=${info.n}</span>`;
@@ -807,7 +765,6 @@ function renderChart() {
     </div>`;
   }
 
-  // X-axis ticks — aligned with the offset zero line
   const tickVals = [0, 0.25, 0.5, 0.75, 1.0].map(t => t * chartMax);
   const tickHtml = tickVals.map(t => {
     const pct = (ZERO_OFFSET + t / chartMax * 100 * rightFrac).toFixed(1);
@@ -820,9 +777,7 @@ function renderChart() {
   // Max advantage = largest effect among lanes with enough data
   const maxEffect = Math.max(
     0,
-    ...Object.values(lanes)
-      .filter(l => l.n >= MIN_N)
-      .map(l => l.effect || 0)
+    ...Object.values(lanes).filter(l => l.n >= MIN_N).map(l => l.effect || 0)
   );
   updateStats(result, nRaces, bestLane, maxEffect);
 }
@@ -846,17 +801,18 @@ function updateStats(result, nRaces, bestLane, maxEffect) {
 let scheduleData = null;
 let refreshTimer  = null;
 
-// Friendly display names for regatta codes
 const REGATTA_DISPLAY = {
-  arb:              'ARB',
-  westelijke:       'Westelijke',
-  hollandia:        'Hollandia',
-  raceroei:         'Raceroei',
-  hollandbeker:     'Holland Beker',
-  voorjaarsregatta: 'Voorjaarsregatta',
-  bvr:              'BvR',
-  nsrf:             'NSRF',
-  diyr:             'DIYR',
+  arb:                  'ARB',
+  westelijke:           'Westelijke',
+  hollandia:            'Hollandia',
+  raceroei:             'Raceroei',
+  hollandbeker:         'Holland Beker',
+  voorjaarsregatta:     'Voorjaarsregatta',
+  bvr:                  'BvR',
+  nsrf:                 'NSRF',
+  diyr:                 'DIYR',
+  zrb:                  'ZRB',
+  'zuidelijke-regatta': 'Zuidelijke Regatta',
 };
 
 async function loadSchedule() {
@@ -875,8 +831,8 @@ function getRegattaStatus(regattaCode, selectedYear) {
   const today    = new Date().toISOString().slice(0, 10);
   const thisYear = new Date().getFullYear().toString();
   if (selectedYear !== thisYear) return 'historic';
-  if (info.dates.includes(today))           return 'live';
-  if (info.dates.some(d => d > today))      return 'upcoming';
+  if (info.dates.includes(today))      return 'live';
+  if (info.dates.some(d => d > today)) return 'upcoming';
   return 'historic';
 }
 
@@ -887,10 +843,6 @@ function getNextRaceDate(regattaCode) {
   const today = new Date().toISOString().slice(0, 10);
   return (info.dates || []).find(d => d >= today) || null;
 }
-
-// ─── Live / upcoming buttons ──────────────────────────────────────────────────
-// Scans schedule.json and renders a button for every regatta that is
-// live today or upcoming. Clicking a button selects that regatta directly.
 
 function renderScheduleButtons() {
   const container = document.getElementById('live-buttons');
@@ -933,14 +885,11 @@ function renderScheduleButtons() {
   }
 }
 
-// Jump to a specific regatta + year directly, bypassing the dropdowns
 async function jumpToRegatta(code, year) {
   const regattaSel = document.getElementById('regatta-select');
   regattaSel.value = code;
-  // Repopulate years for this regatta, then select the right year
   await populateYears(code);
   const yearSel = document.getElementById('year-select');
-  // Add the year as an option if not present (upcoming regattas have no data yet)
   if (![...yearSel.options].some(o => o.value === year)) {
     const o = document.createElement('option');
     o.value = year; o.textContent = year;
@@ -949,8 +898,6 @@ async function jumpToRegatta(code, year) {
   yearSel.value = year;
   await loadData();
 }
-
-// ─── Status pill + upcoming banner ───────────────────────────────────────────
 
 function updateStatusPill() {
   const regatta = document.getElementById('regatta-select').value;
@@ -965,7 +912,7 @@ function updateStatusPill() {
       const d = new Date(window._lastScraped);
       timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     }
-    pill.textContent = `Live — last scraped ${timeStr}`;
+    pill.textContent = `Live — ${timeStr}`;
     if (dotEl) { dotEl.style.background = '#4fc3f7'; dotEl.style.display = ''; }
   } else if (status === 'upcoming') {
     const next    = getNextRaceDate(regatta);
@@ -974,18 +921,11 @@ function updateStatusPill() {
     pill.textContent = `Upcoming${dateStr ? ' — ' + dateStr : ''}`;
     if (dotEl) { dotEl.style.background = '#e8b84b'; dotEl.style.display = ''; }
   } else {
-    if (window._lastScraped) {
-      const d = new Date(window._lastScraped);
-      const dateStr = d.toLocaleDateString([], {day:'numeric', month:'short', year:'numeric'});
-      pill.textContent = `Historic data — scraped ${dateStr}`;
-    } else {
-      pill.textContent = 'Historic data';
-    }
+    pill.textContent = 'Historic data';
     if (dotEl) dotEl.style.display = 'none';
   }
 }
 
-// Show an "upcoming" placeholder in the chart area instead of "no data"
 function maybeShowUpcomingBanner() {
   const regatta = document.getElementById('regatta-select').value;
   const year    = document.getElementById('year-select').value;
@@ -1005,30 +945,24 @@ function maybeShowUpcomingBanner() {
   return true;
 }
 
-// ─── Smart refresh ────────────────────────────────────────────────────────────
-
 function scheduleRefresh() {
   if (refreshTimer) clearTimeout(refreshTimer);
   const regatta = document.getElementById('regatta-select').value;
   const year    = document.getElementById('year-select').value;
   if (getRegattaStatus(regatta, year) !== 'live') return;
 
-  const now          = new Date();
-  const msInMin      = now.getSeconds() * 1000 + now.getMilliseconds();
-  const minInCycle   = now.getMinutes() % 15;
-  const msUntilNext  = (15 - minInCycle) * 60 * 1000 - msInMin;
+  const now         = new Date();
+  const msInMin     = now.getSeconds() * 1000 + now.getMilliseconds();
+  const minInCycle  = now.getMinutes() % 15;
+  const msUntilNext = (15 - minInCycle) * 60 * 1000 - msInMin;
   refreshTimer = setTimeout(async () => { await loadData(); scheduleRefresh(); }, msUntilNext);
   console.log(`Live mode: next refresh in ${Math.round(msUntilNext / 1000)}s`);
 }
 
-// ─── Patch loadData ───────────────────────────────────────────────────────────
 const _originalLoadData = loadData;
 loadData = async function() {
-  // For upcoming regattas show the banner instead of trying to load data
   if (maybeShowUpcomingBanner()) {
     updateStatusPill();
-    document.getElementById('last-updated').textContent =
-      document.getElementById('last-updated').textContent; // keep pill text
     updateStats(null, 0);
     return;
   }
@@ -1037,15 +971,16 @@ loadData = async function() {
   scheduleRefresh();
 };
 
-// ─── Wire up controls & boot ──────────────────────────────────────────────────
 document.getElementById('regatta-select').addEventListener('change', onRegattaChange);
 document.getElementById('year-select').addEventListener('change', loadData);
 
 (async () => {
   await loadSchedule();
-  renderScheduleButtons();   // show live/upcoming buttons at the top
+  renderScheduleButtons();
   await onRegattaChange();
 })();
 </script>
+<script data-goatcounter="https://regatta-fairness.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
