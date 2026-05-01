@@ -514,45 +514,58 @@
   </div>
 
   <div class="explain">
-    <strong style="color:var(--text-primary)">How it's calculated</strong><br><br>
-    Lane times are modelled using a <strong>linear mixed model</strong>:
-    <em>time = lane effect + race effect + noise</em>.
-    Each race gets its own random intercept that absorbs differences in boat class and crew speed —
-    so only the lane signal remains. This correctly handles the fact that outer lanes appear
-    in fewer races than inner lanes. Lanes are assigned randomly in heats (<em>voorwedstrijden</em>),
-    which makes the lane effects unbiased and directly interpretable.
+    <strong style="color:var(--text-primary)">What data is used</strong><br><br>
+    Only <strong>heats</strong> (<em>voorwedstrijden</em>) are included in this analysis.
+    Heats have randomly assigned lanes, which is essential — without random assignment,
+    faster crews might systematically end up in certain lanes and we could not separate
+    lane effects from crew quality. Finals and semi-finals are excluded because lane
+    assignment there is based on previous results, not random.
     <br><br>
     <strong style="color:var(--text-primary)">What the bars show</strong><br><br>
-    Each bar shows how many seconds slower that lane is on average compared to the fastest lane (always 0).
-    Error bars show ±1 standard error from the model — a measure of how certain the estimate is.
-    A narrow bar means many races contributed; a wide bar means few races and more uncertainty.
+    Each bar shows how many seconds slower that lane is on average compared to the fastest lane.
+    The fastest lane always shows 0.00s — it is the reference point. All other lanes are
+    expressed as a disadvantage relative to it. The error bars show the uncertainty in that
+    estimate — a wide bar means fewer races contributed and the estimate is less reliable.
     <br><br>
-    <strong style="color:var(--text-primary)">Significance symbols</strong><br><br>
-    The symbols next to each lane answer the question:
-    <em>"Is this lane significantly slower than the fastest lane?"</em>
-    Specifically, for each lane j the test is:
-    <br><br>
-    <span style="font-family:monospace;font-size:12px;color:var(--accent)">
-    H₀: effect(lane j) − effect(fastest lane) = 0</span>
-    <br><br>
-    The test statistic uses the full covariance matrix from the model, so the
-    uncertainty of both the lane estimate <em>and</em> the fastest lane estimate are
-    accounted for. The fastest lane always gets p = 1 by definition.
-    <br><br>
+    <strong style="color:var(--text-primary)">Two separate statistical tests</strong><br><br>
+    There are two questions being answered, and it is important to read them together.<br><br>
+
+    <strong style="color:var(--text-primary)">1. Overall test</strong> (the banner above the chart)<br>
+    This asks: <em>"Could the pattern across all lanes have arisen purely by chance?"</em>
+    Concretely: if all lanes were perfectly equal, how likely would it be to see lane
+    differences at least this large just from random variation in race results?
+    The percentage shown as a p-value is that probability. If it is low — say below 5% —
+    we conclude that something real is going on and that lanes are not all equal on this day.
+    If the p-value is high, the observed pattern is consistent with pure noise and we cannot
+    draw conclusions about lane fairness.<br><br>
+
+    <strong style="color:var(--text-primary)">2. Per-lane test</strong> (the symbols † * ** *** next to each lane)<br>
+    This asks for each individual lane: <em>"Could the gap between this lane and the fastest
+    lane have arisen purely by chance?"</em> Again, the symbol reflects how unlikely that
+    gap would be if all lanes were equal.<br><br>
+
+    <strong style="color:var(--text-primary)">When the two tests disagree</strong><br><br>
+    It is possible that one or two lanes show a significant symbol, while the overall banner
+    says the differences are not significant. This sounds contradictory but makes sense:
+    the overall test looks at the full pattern across all lanes at once and is harder to pass.
+    If only one lane stands out while the others are all similar, the overall test may not
+    find enough evidence to condemn the regatta as a whole, even though that one lane looks
+    suspicious individually. In such cases, treat the result with extra caution — the single
+    lane finding could be a false alarm from running multiple tests simultaneously.
+    The safest conclusion is: <em>"Lane X appears slower, but the overall evidence for a
+    systematic fairness problem is not conclusive."</em><br><br>
+
     <span style="color:var(--gold)">†</span>&nbsp; p &lt; 0.10 — borderline, treat with caution<br>
     <span style="color:var(--gold)">*</span>&nbsp; p &lt; 0.05 — significant by the standard threshold<br>
     <span style="color:var(--gold)">**</span>&nbsp; p &lt; 0.01 — strong evidence<br>
     <span style="color:var(--gold)">***</span>&nbsp; p &lt; 0.001 — very strong evidence<br>
     <br>
-    The banner above the chart shows a separate overall test: whether <em>any</em> lane
-    differences exist at all, using a likelihood ratio test comparing a model with lane
-    effects to one without (χ² test, df = number of lanes − 1).
-    <br><br>
     <strong style="color:var(--text-primary)">Important caveat</strong><br><br>
-    A significant result means the effect is <em>detectable</em>, not necessarily large.
-    With many races even a small difference becomes significant. Always read the effect size
-    in seconds alongside the p-value. Conversely, on a day with few races a real disadvantage
-    may not reach significance — absence of evidence is not evidence of absence.
+    A significant result means the effect is <em>detectable</em>, not necessarily large or
+    practically meaningful. With many races even a tiny difference can become statistically
+    significant. Always read the effect size in seconds alongside the significance symbol.
+    Conversely, on a day with few races a real disadvantage may not reach significance —
+    the absence of a significant result is not proof that all lanes are fair.
   </div>
 
   <div style="margin-top:3rem;padding-top:1.5rem;border-top:1px solid rgba(255,255,255,0.08);
