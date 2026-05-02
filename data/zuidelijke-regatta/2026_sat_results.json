@@ -1,30 +1,37 @@
 {
-  "n_races": 7,
+  "n_races": 10,
   "lanes": {
+    "1": {
+      "effect": 7.8838,
+      "se": 3.7461,
+      "n": 3,
+      "p": 0.1411,
+      "sig": ""
+    },
     "2": {
-      "effect": 4.1529,
-      "se": 2.1199,
-      "n": 7,
-      "p": 0.258,
+      "effect": 0.0,
+      "se": 2.3025,
+      "n": 10,
+      "p": 1.0,
       "sig": ""
     },
     "3": {
-      "effect": 3.8557,
-      "se": 2.1199,
-      "n": 7,
-      "p": 0.2937,
+      "effect": 3.366,
+      "se": 2.3025,
+      "n": 10,
+      "p": 0.3151,
       "sig": ""
     },
     "4": {
-      "effect": 0.0,
-      "se": 2.1199,
-      "n": 7,
-      "p": 1.0,
+      "effect": 0.834,
+      "se": 2.3025,
+      "n": 10,
+      "p": 0.8034,
       "sig": ""
     }
   },
-  "p_overall": 0.418,
+  "p_overall": 0.3887,
   "sig_overall": false,
-  "reference_lane": 4,
+  "reference_lane": 2,
   "model": "lmm_sum_coding"
 }
