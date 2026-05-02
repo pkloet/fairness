@@ -574,6 +574,11 @@
       <a href="https://www.linkedin.com/in/pim-kloet" target="_blank"
         style="color:var(--accent);text-decoration:none;">LinkedIn — Pim Kloet</a></span>
   </div>
+  <div style="margin-top:1rem;font-size:12px;color:var(--text-secondary);text-align:center;line-height:1.8;">
+    Enjoying the analysis? Support further development by
+    <a href="https://ko-fi.com/pkloet" target="_blank"
+      style="color:var(--gold);text-decoration:none;">buying me a coffee ☕</a>
+  </div>
 
 </div>
 
@@ -1000,7 +1005,48 @@ document.getElementById('year-select').addEventListener('change', loadData);
 (async () => {
   await loadSchedule();
   renderScheduleButtons();
-  await onRegattaChange();
+
+  // If there is a live regatta today, jump straight to it
+  if (scheduleData) {
+    const today = new Date().toISOString().slice(0, 10);
+    const thisYear = new Date().getFullYear().toString();
+    const liveEntry = Object.entries(scheduleData.regattas || {})
+      .find(([, info]) => (info.dates || []).includes(today));
+    if (liveEntry) {
+      await jumpToRegatta(liveEntry[0], thisYear);
+      return;
+    }
+  }
+
+  // Otherwise find the most recent regatta that has data —
+  // probe all regattas for their most recent year in parallel
+  const regattaCodes = [...document.getElementById('regatta-select').options]
+    .map(o => o.value);
+
+  const mostRecentYear = new Date().getFullYear();
+  const checks = regattaCodes.map(async code => {
+    for (let y = mostRecentYear; y >= 2010; y--) {
+      try {
+        const r = await fetch(`data/${code}/${y}_sat.json`, { method: 'HEAD' });
+        if (r.ok) return { code, year: y };
+      } catch(e) {}
+    }
+    return null;
+  });
+
+  const found = await Promise.all(checks);
+  const valid = found.filter(Boolean).sort((a, b) => b.year - a.year);
+
+  if (valid.length > 0) {
+    // Pick the regatta with the most recent year
+    const best = valid[0];
+    document.getElementById('regatta-select').value = best.code;
+    await populateYears(best.code);
+    document.getElementById('year-select').value = best.year;
+    await loadData();
+  } else {
+    await onRegattaChange();
+  }
 })();
 </script>
 <script data-goatcounter="https://regatta-fairness.goatcounter.com/count"
