@@ -1,0 +1,30 @@
+{
+  "n_races": 7,
+  "lanes": {
+    "2": {
+      "effect": 4.1529,
+      "se": 2.1199,
+      "n": 7,
+      "p": 0.258,
+      "sig": ""
+    },
+    "3": {
+      "effect": 3.8557,
+      "se": 2.1199,
+      "n": 7,
+      "p": 0.2937,
+      "sig": ""
+    },
+    "4": {
+      "effect": 0.0,
+      "se": 2.1199,
+      "n": 7,
+      "p": 1.0,
+      "sig": ""
+    }
+  },
+  "p_overall": 0.418,
+  "sig_overall": false,
+  "reference_lane": 4,
+  "model": "lmm_sum_coding"
+}
