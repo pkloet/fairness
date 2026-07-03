@@ -1,0 +1,37 @@
+{
+  "n_races": 6,
+  "lanes": {
+    "2": {
+      "effect": 0.0,
+      "se": 8.9473,
+      "n": 6,
+      "p": 0.0444,
+      "sig": "*"
+    },
+    "3": {
+      "effect": 49.0767,
+      "se": 20.612,
+      "n": 6,
+      "p": 0.2761,
+      "sig": ""
+    },
+    "4": {
+      "effect": 21.3017,
+      "se": 8.9338,
+      "n": 6,
+      "p": 0.7839,
+      "sig": ""
+    },
+    "5": {
+      "effect": 25.17,
+      "se": 18.3301,
+      "n": 6,
+      "p": 0.9469,
+      "sig": ""
+    }
+  },
+  "p_overall": null,
+  "sig_overall": null,
+  "reference_lane": 2,
+  "model": "row_mean_fallback"
+}
