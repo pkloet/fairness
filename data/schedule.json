@@ -1,19 +1,11 @@
 {
-  "generated": "2026-06-29",
+  "generated": "2026-07-20",
   "regattas": {
-    "diyr": {
-      "name": "Dutch International Youth Regatta",
+    "hollandbeker": {
+      "name": "Koninklijke- Holland Beker",
       "dates": [
-        "2026-07-03",
-        "2026-07-04",
-        "2026-07-05"
-      ]
-    },
-    "nsrf": {
-      "name": "NSRF Slotwedstrijden",
-      "dates": [
-        "2026-07-04",
-        "2026-07-05"
+        "2027-06-19",
+        "2027-06-20"
       ]
     }
   }
