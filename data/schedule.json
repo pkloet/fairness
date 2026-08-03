@@ -1,11 +1,18 @@
 {
-  "generated": "2026-07-27",
+  "generated": "2026-08-03",
   "regattas": {
     "hollandbeker": {
       "name": "Koninklijke- Holland Beker",
       "dates": [
         "2027-06-19",
         "2027-06-20"
+      ]
+    },
+    "nsrf": {
+      "name": "NSRF Slotwedstrijden",
+      "dates": [
+        "2027-07-03",
+        "2027-07-04"
       ]
     }
   }
