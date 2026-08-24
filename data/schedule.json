@@ -1,5 +1,5 @@
 {
-  "generated": "2026-08-17",
+  "generated": "2026-08-24",
   "regattas": {
     "hollandbeker": {
       "name": "Koninklijke- Holland Beker",
@@ -13,6 +13,14 @@
       "dates": [
         "2027-07-03",
         "2027-07-04"
+      ]
+    },
+    "diyr": {
+      "name": "Dutch International Youth Regatta",
+      "dates": [
+        "2027-07-09",
+        "2027-07-10",
+        "2027-07-11"
       ]
     }
   }
