@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-14",
+  "generated": "2026-09-21",
   "regattas": {
     "hollandia": {
       "name": "Hollandia Roeiwedstrijden / NK Klein",
@@ -30,18 +30,18 @@
         "2027-05-30"
       ]
     },
+    "raceroei": {
+      "name": "Raceroei Regatta",
+      "dates": [
+        "2027-06-12",
+        "2027-06-13"
+      ]
+    },
     "hollandbeker": {
       "name": "Koninklijke- Holland Beker",
       "dates": [
         "2027-06-19",
         "2027-06-20"
-      ]
-    },
-    "raceroei": {
-      "name": "Raceroei Regatta",
-      "dates": [
-        "2027-06-26",
-        "2027-06-27"
       ]
     },
     "nsrf": {
